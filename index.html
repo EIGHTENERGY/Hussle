@@ -175,15 +175,15 @@
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
         function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
 
-        // ---- Correctif complet pour les coeurs ----
+        // ---- Correctif complet pour le positionnement des coeurs sur mobile ----
         function updateHearts() { 
             healthHearts.clear(true, true); 
 
             if (isMobile) {
                 const scale = 0.6 * spriteScale; 
                 const spacing = 25; 
-                const startX = this.scale.width - (lives * spacing) - 10; 
-                const yPos = 40; 
+                const startX = healthLabel.x + healthLabel.width + 10; // juste à droite du texte "VIE:"
+                const yPos = 22; // même hauteur que le texte
                 for (let i = 0; i < lives; i++) { 
                     let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
                         .setOrigin(0.5, 0.5)
@@ -206,7 +206,29 @@
             }
         }
 
-        function endGame() { if (this.backMusic.isPlaying) this.backMusic.stop(); this.gameOverSound.play(); this.physics.pause(); player.setTint(0xff0000); gameOver = true; spawnObstacleEvent.remove(false); spawnBonusEvent.remove(false); if (timerEvent) timerEvent.remove(false); overlay.setVisible(true); gameOverText.setText('GAME OVER'); gameOverText.setTint(0xff0000); gameOverText.setAlpha(0); finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); this.tweens.add({ targets: gameOverText, alpha: 1, scaleX: 2, scaleY: 2, duration: 500, ease: 'Sine.easeOut', onComplete: () => { this.tweens.add({ targets: gameOverText, scaleX: 1.8, scaleY: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' }); } }); restartButton.setVisible(true); restartButtonText.setVisible(true); }
+        function endGame() { 
+            if (this.backMusic.isPlaying) this.backMusic.stop(); 
+            this.gameOverSound.play(); 
+            this.physics.pause(); 
+            player.setTint(0xff0000); 
+            gameOver = true; 
+            spawnObstacleEvent.remove(false); 
+            spawnBonusEvent.remove(false); 
+            if (timerEvent) timerEvent.remove(false); 
+            overlay.setVisible(true); 
+            gameOverText.setText('GAME OVER'); 
+            gameOverText.setTint(0xff0000); 
+            gameOverText.setAlpha(0); 
+            finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); 
+            this.tweens.add({ targets: gameOverText, alpha: 1, scaleX: 2, scaleY: 2, duration: 500, ease: 'Sine.easeOut', 
+                onComplete: () => { 
+                    this.tweens.add({ targets: gameOverText, scaleX: 1.8, scaleY: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' }); 
+                } 
+            }); 
+            restartButton.setVisible(true); 
+            restartButtonText.setVisible(true); 
+        }
+
         function resetGame() { 
             score = 0; 
             lives = 3; 
