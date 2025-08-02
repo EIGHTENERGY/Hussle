@@ -36,8 +36,68 @@
             },
             render: { antialias: true, roundPixels: true },
             physics: { default: 'arcade', arcade: { debug: false } },
-            scene: { preload, create, update }
+            scene: [IntroScene, MainScene]
         };
+
+        let game = new Phaser.Game(config);
+        let musicStarted = false;
+
+        function supportsWebP() {
+            const canvas = document.createElement('canvas');
+            return !!(canvas.getContext && canvas.getContext('2d'))
+                ? canvas.toDataURL('image/webp').indexOf('data:image/webp') == 0
+                : false;
+        }
+
+        // --- SCENE INTRO ---
+        function IntroScene() { Phaser.Scene.call(this, { key: 'IntroScene' }); }
+        IntroScene.prototype = Object.create(Phaser.Scene.prototype);
+        IntroScene.prototype.constructor = IntroScene;
+
+        IntroScene.prototype.preload = function () {
+            this.load.image('introWebP', 'image/intro.webp');
+            this.load.image('introJPG', 'image/intro.jpg');
+            this.load.audio('back', 'son/back.mp3');
+            this.load.audio('back_intro', 'son/back_intro.mp3'); // <-- ajout intro
+        };
+
+        IntroScene.prototype.create = function () {
+            const { width, height } = this.scale;
+            const key = supportsWebP() ? 'introWebP' : 'introJPG';
+            this.add.image(width / 2, height / 2, key).setDisplaySize(width, height);
+
+            // --- Musique intro ---
+            this.introMusic = this.sound.add('back_intro', { loop: true, volume: 0.2 });
+            this.introMusic.play();
+
+            const startButton = this.add.text(width / 2, height * 0.8, 'START', {
+                fontSize: '48px',
+                fill: '#ffffff',
+                fontFamily: 'vt323'
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+            startButton.on('pointerdown', () => {
+                // --- Stop musique intro ---
+                if (this.introMusic && this.introMusic.isPlaying) {
+                    this.introMusic.stop();
+                }
+
+                // --- Débloquer et lancer la musique du jeu sur mobile ---
+                if (isMobile && !musicStarted) {
+                    this.sound.unlock();
+                    this.sound.add('back', { loop: true, volume: 0.15 }).play();
+                    musicStarted = true;
+                }
+
+                this.cameras.main.fadeOut(500, 0, 0, 0);
+                this.time.delayedCall(500, () => this.scene.start('MainScene'));
+            });
+        };
+
+        // --- SCENE JEU PRINCIPAL ---
+        function MainScene() { Phaser.Scene.call(this, { key: 'MainScene' }); }
+        MainScene.prototype = Object.create(Phaser.Scene.prototype);
+        MainScene.prototype.constructor = MainScene;
 
         let player, cursors, obstacles, bonuses, background;
         let score = 0, scoreText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
@@ -47,19 +107,10 @@
         let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
         let spawnObstacleEvent, spawnBonusEvent;
         let timer = 0, timerEvent;
-        let musicStarted = false;
         let levelTween, levelTimer;
         const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
-        const game = new Phaser.Game(config);
 
-        function supportsWebP() {
-            const canvas = document.createElement('canvas');
-            return !!(canvas.getContext && canvas.getContext('2d'))
-                ? canvas.toDataURL('image/webp').indexOf('data:image/webp') == 0
-                : false;
-        }
-
-        function preload() {
+        MainScene.prototype.preload = function () {
             const isRetina = window.devicePixelRatio > 1;
             const useWebP = supportsWebP();
             const ext = useWebP ? 'webp' : 'png';
@@ -70,16 +121,15 @@
             this.load.image('road', `image/road${isRetina ? '@2x' : ''}.${ext}`);
             this.load.image('vie', `image/vie${isRetina ? '@2x' : ''}.${ext}`);
 
-            this.load.audio('back', 'son/back.mp3');
             this.load.audio('bonus', 'son/bonus.wav');
             this.load.audio('obstacle', 'son/obstacle.wav');
             this.load.audio('gameover', 'son/gameover.mp3');
             this.load.audio('lvl', 'son/lvl.wav');
 
             this.load.bitmapFont('vt323', 'fonts/vt323_0.png', 'fonts/vt323.fnt');
-        }
+        };
 
-        function create() {
+        MainScene.prototype.create = function () {
             background = this.add.tileSprite(200, 300, 400, 1200, 'road').setDepth(0);
 
             player = this.physics.add.sprite(200, 400, 'player')
@@ -132,17 +182,9 @@
                 }
             });
 
-            if (isMobile) {
-                this.input.once('pointerdown', () => {
-                    if (!musicStarted) {
-                        this.sound.unlock(); // déblocage audio mobile
-                        this.backMusic = this.sound.add('back', { loop: true, volume: 0.10 });
-                        this.backMusic.play();
-                        musicStarted = true;
-                    }
-                });
-            } else {
-                this.backMusic = this.sound.add('back', { loop: true, volume: 0.10 });
+            // --- Musique sur PC (déjà lancée sur mobile via IntroScene) ---
+            if (!isMobile && !musicStarted) {
+                this.backMusic = this.sound.add('back', { loop: true, volume: 0.15 });
                 this.backMusic.play();
                 musicStarted = true;
             }
@@ -151,21 +193,19 @@
             this.obstacleSound = this.sound.add('obstacle', { volume: 0.2 });
             this.gameOverSound = this.sound.add('gameover', { volume: 0.7 });
             this.levelSound = this.sound.add('lvl', { volume: 0.5 });
-        }
+        };
 
-        function update(time, delta) {
+        MainScene.prototype.update = function (time, delta) {
             if (gameOver) return;
 
             background.tilePositionY -= roadScrollSpeed * (delta / 16.66);
 
-            // --- Mouvement fluide du joueur ---
-            const moveSpeed = 250; // pixels/sec
+            const moveSpeed = 250;
             if (cursors.left.isDown) player.x -= moveSpeed * (delta / 1000);
             else if (cursors.right.isDown) player.x += moveSpeed * (delta / 1000);
             if (cursors.up.isDown) player.y -= moveSpeed * (delta / 1000);
             else if (cursors.down.isDown) player.y += moveSpeed * (delta / 1000);
 
-            // --- Défilement obstacles & bonus manuel (plus fluide) ---
             obstacles.children.iterate(obj => { obj.y += obstacleSpeed * (delta / 1000); });
             bonuses.children.iterate(obj => { obj.y += bonusSpeed * (delta / 1000); });
 
@@ -184,134 +224,19 @@
                 adjustSpawnRates();
             }
             scoreText.setText('SCORE: ' + score);
-        }
+        };
 
         function getLevelFromScore(score) { let lvl = 1; for (let i = 1; i < levelThresholds.length; i++) { if (score >= levelThresholds[i]) lvl = i + 1; } return lvl; }
         function adjustSpawnRates() { spawnBonusEvent.reset({ delay: Math.max(500, 2500 - level * 300), callback: spawnBonus, callbackScope: this, loop: true }); spawnObstacleEvent.reset({ delay: Math.max(400, 1200 - level * 100), callback: spawnObstacle, callbackScope: this, loop: true }); }
-
-        function showLevelMessage(scene) {
-            if (scene.levelSound) scene.levelSound.play();
-            levelDisplay.setText("NIVEAU : " + level);
-
-            if (levelTween) levelTween.stop();
-            if (levelTimer) levelTimer.remove(false);
-
-            levelTween = scene.tweens.add({ targets: levelDisplay, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true });
-            levelTimer = scene.time.addEvent({ delay: 1500, callback: () => levelDisplay.setText('') });
-        }
-
-        function spawnObstacle() {
-            obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle')
-                .setDisplaySize(40 * spriteScale, 40 * spriteScale)
-                .setDepth(1);
-        }
-        function spawnBonus() {
-            bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus')
-                .setDisplaySize(40 * spriteScale, 40 * spriteScale)
-                .setDepth(1);
-        }
+        function showLevelMessage(scene) { if (scene.levelSound) scene.levelSound.play(); levelDisplay.setText("NIVEAU : " + level); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false); levelTween = scene.tweens.add({ targets: levelDisplay, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true }); levelTimer = scene.time.addEvent({ delay: 1500, callback: () => levelDisplay.setText('') }); }
+        function spawnObstacle() { obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle').setDisplaySize(40 * spriteScale, 40 * spriteScale).setDepth(1); }
+        function spawnBonus() { bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus').setDisplaySize(40 * spriteScale, 40 * spriteScale).setDepth(1); }
         function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
         function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
-
-        function updateHearts() { 
-            healthHearts.clear(true, true); 
-            if (isMobile) {
-                const scale = 0.6 * spriteScale; 
-                const heartWidth = 32 * scale;
-                const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20);
-                let spacing = heartWidth * 1.1;
-                if (lives * spacing > availableWidth) spacing = availableWidth / lives;
-                const startX = healthLabel.x + healthLabel.width + 10; 
-                const textMidY = healthLabel.y + (healthLabel.height * 0.5);
-                for (let i = 0; i < lives; i++) { 
-                    let heart = this.add.image(startX + (i * spacing), textMidY, 'vie')
-                        .setOrigin(0.5, 0.5)
-                        .setScale(scale)
-                        .setDepth(11); 
-                    healthHearts.add(heart); 
-                }
-            } else {
-                const startX = 345; 
-                const spacing = 19; 
-                const scale = 0.4; 
-                const yPos = 22; 
-                for (let i = 0; i < lives; i++) { 
-                    let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
-                        .setOrigin(0.5, 0.5)
-                        .setScale(scale)
-                        .setDepth(11); 
-                    healthHearts.add(heart); 
-                }
-            }
-        }
-
-        function endGame() { 
-            if (gameOver) return;
-            gameOver = true;
-
-            if (this.backMusic && this.backMusic.isPlaying) this.backMusic.stop(); 
-            this.gameOverSound.play(); 
-            this.physics.pause(); 
-            player.setTint(0xff0000); 
-
-            spawnObstacleEvent.remove(false); 
-            spawnBonusEvent.remove(false); 
-            if (timerEvent) timerEvent.remove(false); 
-
-            if (levelTween) levelTween.stop();
-            if (levelTimer) levelTimer.remove(false);
-            levelDisplay.setText('');
-
-            overlay.setVisible(true); 
-            gameOverText.setText('GAME OVER'); 
-            gameOverText.setTint(0xff0000); 
-            gameOverText.setAlpha(0); 
-            finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); 
-
-            this.tweens.timeline({
-                tweens: [
-                    { targets: gameOverText, alpha: 1, scale: 2, duration: 500, ease: 'Sine.easeOut' },
-                    { targets: gameOverText, scale: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' }
-                ]
-            });
-
-            restartButton.setVisible(true); 
-            restartButtonText.setVisible(true); 
-        }
-
-        function resetGame() { 
-            score = 0; 
-            lives = 3; 
-            level = 1; 
-            timer = 0; 
-            gameOver = false;
-
-            obstacleSpeed = 120;
-            bonusSpeed = 200;
-            roadScrollSpeed = 2;
-
-            scoreText.setText('SCORE: 0'); 
-            timerText.setText('TEMPS: 0'); 
-            levelText.setText('NIVEAU: 1'); 
-            finalScoreText.setText(''); 
-            gameOverText.setText(''); 
-            overlay.setVisible(false); 
-            restartButton.setVisible(false); 
-            restartButtonText.setVisible(false); 
-            player.clearTint(); 
-            player.setPosition(200, 400); 
-            obstacles.clear(true, true); 
-            bonuses.clear(true, true); 
-            this.physics.resume(); 
-
-            timerEvent = this.time.addEvent({ delay: 1000, callback: () => { timer++; timerText.setText('TEMPS: ' + timer); }, loop: true }); 
-            spawnObstacleEvent = this.time.addEvent({ delay: 1200, callback: spawnObstacle, callbackScope: this, loop: true }); 
-            spawnBonusEvent = this.time.addEvent({ delay: 2000, callback: spawnBonus, callbackScope: this, loop: true }); 
-            updateHearts.call(this); 
-
-            if (musicStarted && this.backMusic) this.backMusic.play(); 
-        }
+        function updateHearts() { healthHearts.clear(true, true); if (isMobile) { const scale = 0.6 * spriteScale; const heartWidth = 32 * scale; const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20); let spacing = heartWidth * 1.1; if (lives * spacing > availableWidth) spacing = availableWidth / lives; const startX = healthLabel.x + healthLabel.width + 10; const textMidY = healthLabel.y + (healthLabel.height * 0.5); for (let i = 0; i < lives; i++) { let heart = this.add.image(startX + (i * spacing), textMidY, 'vie').setOrigin(0.5, 0.5).setScale(scale).setDepth(11); healthHearts.add(heart); } } else { const startX = 345; const spacing = 19; const scale = 0.4; const yPos = 22; for (let i = 0; i < lives; i++) { let heart = this.add.image(startX + (i * spacing), yPos, 'vie').setOrigin(0.5, 0.5).setScale(scale).setDepth(11); healthHearts.add(heart); } } }
+        function endGame() { if (gameOver) return; gameOver = true; if (this.backMusic && this.backMusic.isPlaying) this.backMusic.stop(); this.gameOverSound.play(); this.physics.pause(); player.setTint(0xff0000); spawnObstacleEvent.remove(false); spawnBonusEvent.remove(false); if (timerEvent) timerEvent.remove(false); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false); levelDisplay.setText(''); overlay.setVisible(true); gameOverText.setText('GAME OVER'); gameOverText.setTint(0xff0000); gameOverText.setAlpha(0); finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); this.tweens.timeline({ tweens: [ { targets: gameOverText, alpha: 1, scale: 2, duration: 500, ease: 'Sine.easeOut' }, { targets: gameOverText, scale: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' } ] }); restartButton.setVisible(true); restartButtonText.setVisible(true); }
+        function resetGame() { score = 0; lives = 3; level = 1; timer = 0; gameOver = false; obstacleSpeed = 120; bonusSpeed = 200; roadScrollSpeed = 2; scoreText.setText('SCORE: 0'); timerText.setText('TEMPS: 0'); levelText.setText('NIVEAU: 1'); finalScoreText.setText(''); gameOverText.setText(''); overlay.setVisible(false); restartButton.setVisible(false); restartButtonText.setVisible(false); player.clearTint(); player.setPosition(200, 400); obstacles.clear(true, true); bonuses.clear(true, true); this.physics.resume(); timerEvent = this.time.addEvent({ delay: 1000, callback: () => { timer++; timerText.setText('TEMPS: ' + timer); }, loop: true }); spawnObstacleEvent = this.time.addEvent({ delay: 1200, callback: spawnObstacle, callbackScope: this, loop: true }); spawnBonusEvent = this.time.addEvent({ delay: 2000, callback: spawnBonus, callbackScope: this, loop: true }); updateHearts.call(this); if (musicStarted && this.backMusic) this.backMusic.play(); }
     </script>
 </body>
 </html>
