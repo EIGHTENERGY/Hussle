@@ -58,7 +58,7 @@
             this.load.image('introWebP', 'image/intro.webp');
             this.load.image('introJPG', 'image/intro.jpg');
             this.load.audio('back', 'son/back.mp3');
-            this.load.audio('back_intro', 'son/back_intro.mp3'); // <-- ajout intro
+            this.load.audio('back_intro', 'son/back_intro.mp3');
         };
 
         IntroScene.prototype.create = function () {
@@ -68,6 +68,20 @@
 
             // --- Musique intro ---
             this.introMusic = this.sound.add('back_intro', { loop: true, volume: 0.2 });
+
+            // Débloque le son sur mobile / navigateurs stricts
+            const unlockAndPlay = () => {
+                this.sound.unlock();
+                if (!this.introMusic.isPlaying) {
+                    this.introMusic.play();
+                }
+                window.removeEventListener('pointerdown', unlockAndPlay);
+                window.removeEventListener('touchstart', unlockAndPlay);
+            };
+            window.addEventListener('pointerdown', unlockAndPlay);
+            window.addEventListener('touchstart', unlockAndPlay);
+
+            // Essaye immédiatement (fonctionne sur PC ou navigateurs permissifs)
             this.introMusic.play();
 
             const startButton = this.add.text(width / 2, height * 0.8, 'START', {
@@ -77,12 +91,12 @@
             }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
             startButton.on('pointerdown', () => {
-                // --- Stop musique intro ---
+                // Stop musique intro
                 if (this.introMusic && this.introMusic.isPlaying) {
                     this.introMusic.stop();
                 }
 
-                // --- Débloquer et lancer la musique du jeu sur mobile ---
+                // Débloquer et lancer la musique du jeu
                 if (isMobile && !musicStarted) {
                     this.sound.unlock();
                     this.sound.add('back', { loop: true, volume: 0.15 }).play();
