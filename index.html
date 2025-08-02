@@ -48,6 +48,7 @@
         let spawnObstacleEvent, spawnBonusEvent;
         let timer = 0, timerEvent;
         let musicStarted = false;
+        let levelTween, levelTimer;
         const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
         const game = new Phaser.Game(config);
 
@@ -88,7 +89,6 @@
             obstacles = this.physics.add.group();
             bonuses = this.physics.add.group();
 
-            // HUD avec échelle mobile
             scoreText = this.add.bitmapText(10, 5, 'vt323', 'SCORE: 0', 28 * hudScale).setDepth(11);
             timerText = this.add.bitmapText(200, 5, 'vt323', 'TEMPS: 0', 28 * hudScale).setOrigin(0.5, 0).setDepth(11);
             levelText = this.add.bitmapText(200, 50, 'vt323', 'NIVEAU: 1', 28 * hudScale).setOrigin(0.5).setDepth(11);
@@ -132,7 +132,6 @@
                 }
             });
 
-            // --- Musique uniquement après interaction sur mobile ---
             if (isMobile) {
                 this.input.once('pointerdown', () => {
                     if (!musicStarted) {
@@ -144,6 +143,7 @@
             } else {
                 this.backMusic = this.sound.add('back', { loop: true, volume: 0.5 });
                 this.backMusic.play();
+                musicStarted = true;
             }
 
             this.bonusSound = this.sound.add('bonus', { volume: 0.15 });
@@ -183,7 +183,18 @@
 
         function getLevelFromScore(score) { let lvl = 1; for (let i = 1; i < levelThresholds.length; i++) { if (score >= levelThresholds[i]) lvl = i + 1; } return lvl; }
         function adjustSpawnRates() { spawnBonusEvent.reset({ delay: Math.max(500, 2500 - level * 300), callback: spawnBonus, callbackScope: this, loop: true }); spawnObstacleEvent.reset({ delay: Math.max(400, 1200 - level * 100), callback: spawnObstacle, callbackScope: this, loop: true }); }
-        function showLevelMessage(scene) { if (scene.levelSound) scene.levelSound.play(); levelDisplay.setText("NIVEAU : " + level); scene.tweens.add({ targets: levelDisplay, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true }); scene.time.addEvent({ delay: 1500, callback: () => levelDisplay.setText('') }); }
+
+        function showLevelMessage(scene) {
+            if (scene.levelSound) scene.levelSound.play();
+            levelDisplay.setText("NIVEAU : " + level);
+
+            if (levelTween) levelTween.stop();
+            if (levelTimer) levelTimer.remove(false);
+
+            levelTween = scene.tweens.add({ targets: levelDisplay, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true });
+            levelTimer = scene.time.addEvent({ delay: 1500, callback: () => levelDisplay.setText('') });
+        }
+
         function spawnObstacle() { obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle').setDisplaySize(40 * spriteScale, 40 * spriteScale).setVelocityY(obstacleSpeed).setDepth(1); }
         function spawnBonus() { bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus').setDisplaySize(40 * spriteScale, 40 * spriteScale).setVelocityY(bonusSpeed).setDepth(1); }
         function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
@@ -199,9 +210,9 @@
                 let spacing = heartWidth * 1.1;
                 if (lives * spacing > availableWidth) spacing = availableWidth / lives;
                 const startX = healthLabel.x + healthLabel.width + 10; 
-                const yPos = 22;
+                const textMidY = healthLabel.y + healthLabel.height * 0.5;
                 for (let i = 0; i < lives; i++) { 
-                    let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
+                    let heart = this.add.image(startX + (i * spacing), textMidY, 'vie')
                         .setOrigin(0.5, 0.5)
                         .setScale(scale)
                         .setDepth(11); 
@@ -231,6 +242,9 @@
             spawnObstacleEvent.remove(false); 
             spawnBonusEvent.remove(false); 
             if (timerEvent) timerEvent.remove(false); 
+
+            levelDisplay.setText(''); // Efface texte niveau
+
             overlay.setVisible(true); 
             gameOverText.setText('GAME OVER'); 
             gameOverText.setTint(0xff0000); 
