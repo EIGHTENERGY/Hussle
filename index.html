@@ -39,7 +39,7 @@
         };
 
         let player, cursors, obstacles, bonuses, background;
-        let score = 0, scoreText, controlsText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
+        let score = 0, scoreText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
         let gameOverText, finalScoreText, overlay;
         let restartButton, restartButtonText;
         let level = 1, lives = 3, gameOver = false;
@@ -94,16 +94,7 @@
             healthHearts = this.add.group();
             updateHearts.call(this);
 
-            // --- Rectangle noir dynamique ---
-            let rectY = isMobile ? this.scale.height - 50 : this.scale.height - 5;
-            let rectH = isMobile ? 100 : 50;
-            this.add.rectangle(this.scale.width / 2, rectY, this.scale.width, rectH, 0x000000, 1).setDepth(10);
-
-            // --- Texte bas dynamique ---
-            let textY = isMobile ? this.scale.height - 70 : 580;
-            controlsText = this.add.bitmapText(this.scale.width / 2, textY, 'vt323', "Get this money, don't get caught !", 20)
-                .setOrigin(0.5)
-                .setDepth(11);
+            // --- Rectangle noir et texte supprimés ---
 
             levelDisplay = this.add.bitmapText(200, 300, 'vt323', '', 48).setOrigin(0.5).setDepth(20);
             overlay = this.add.rectangle(200, 300, 400, 600, 0x000000, 0.0).setDepth(49).setVisible(false);
