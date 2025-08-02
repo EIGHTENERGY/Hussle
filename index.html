@@ -210,7 +210,7 @@
                 let spacing = heartWidth * 1.1;
                 if (lives * spacing > availableWidth) spacing = availableWidth / lives;
                 const startX = healthLabel.x + healthLabel.width + 10; 
-                const textMidY = healthLabel.y + healthLabel.height * 0.5;
+                const textMidY = healthLabel.y + (healthLabel.height * 0.5);
                 for (let i = 0; i < lives; i++) { 
                     let heart = this.add.image(startX + (i * spacing), textMidY, 'vie')
                         .setOrigin(0.5, 0.5)
@@ -234,27 +234,37 @@
         }
 
         function endGame() { 
+            if (gameOver) return;  // Empêche double déclenchement
+            gameOver = true;
+
             if (this.backMusic && this.backMusic.isPlaying) this.backMusic.stop(); 
             this.gameOverSound.play(); 
             this.physics.pause(); 
             player.setTint(0xff0000); 
-            gameOver = true; 
+
             spawnObstacleEvent.remove(false); 
             spawnBonusEvent.remove(false); 
             if (timerEvent) timerEvent.remove(false); 
 
-            levelDisplay.setText(''); // Efface texte niveau
+            // Stop animations niveau
+            if (levelTween) levelTween.stop();
+            if (levelTimer) levelTimer.remove(false);
+            levelDisplay.setText('');
 
             overlay.setVisible(true); 
             gameOverText.setText('GAME OVER'); 
             gameOverText.setTint(0xff0000); 
             gameOverText.setAlpha(0); 
             finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); 
-            this.tweens.add({ targets: gameOverText, alpha: 1, scaleX: 2, scaleY: 2, duration: 500, ease: 'Sine.easeOut', 
-                onComplete: () => { 
-                    this.tweens.add({ targets: gameOverText, scaleX: 1.8, scaleY: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' }); 
-                } 
-            }); 
+
+            // Timeline fiable
+            this.tweens.timeline({
+                tweens: [
+                    { targets: gameOverText, alpha: 1, scale: 2, duration: 500, ease: 'Sine.easeOut' },
+                    { targets: gameOverText, scale: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' }
+                ]
+            });
+
             restartButton.setVisible(true); 
             restartButtonText.setVisible(true); 
         }
