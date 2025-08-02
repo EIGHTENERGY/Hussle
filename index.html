@@ -94,8 +94,6 @@
             healthHearts = this.add.group();
             updateHearts.call(this);
 
-            // --- Rectangle noir et texte supprimés ---
-
             levelDisplay = this.add.bitmapText(200, 300, 'vt323', '', 48).setOrigin(0.5).setDepth(20);
             overlay = this.add.rectangle(200, 300, 400, 600, 0x000000, 0.0).setDepth(49).setVisible(false);
 
@@ -176,22 +174,39 @@
         function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
         function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
+
+        // ---- Correctif complet pour les coeurs ----
         function updateHearts() { 
             healthHearts.clear(true, true); 
-            const startX = 345; 
-            const spacing = 19; 
-            const scale = 0.4 * spriteScale; 
-            const yPos = 22; 
-            for (let i = 0; i < lives; i++) { 
-                let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
-                    .setOrigin(0.5, 0.5)
-                    .setScale(scale)
-                    .setDepth(11); 
-                healthHearts.add(heart); 
-            } 
+
+            if (isMobile) {
+                const scale = 0.6 * spriteScale; 
+                const spacing = 25; 
+                const startX = this.scale.width - (lives * spacing) - 10; 
+                const yPos = 40; 
+                for (let i = 0; i < lives; i++) { 
+                    let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
+                        .setOrigin(0.5, 0.5)
+                        .setScale(scale)
+                        .setDepth(11); 
+                    healthHearts.add(heart); 
+                }
+            } else {
+                const startX = 345; 
+                const spacing = 19; 
+                const scale = 0.4; 
+                const yPos = 22; 
+                for (let i = 0; i < lives; i++) { 
+                    let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
+                        .setOrigin(0.5, 0.5)
+                        .setScale(scale)
+                        .setDepth(11); 
+                    healthHearts.add(heart); 
+                }
+            }
         }
+
         function endGame() { if (this.backMusic.isPlaying) this.backMusic.stop(); this.gameOverSound.play(); this.physics.pause(); player.setTint(0xff0000); gameOver = true; spawnObstacleEvent.remove(false); spawnBonusEvent.remove(false); if (timerEvent) timerEvent.remove(false); overlay.setVisible(true); gameOverText.setText('GAME OVER'); gameOverText.setTint(0xff0000); gameOverText.setAlpha(0); finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); this.tweens.add({ targets: gameOverText, alpha: 1, scaleX: 2, scaleY: 2, duration: 500, ease: 'Sine.easeOut', onComplete: () => { this.tweens.add({ targets: gameOverText, scaleX: 1.8, scaleY: 1.8, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.easeInOut' }); } }); restartButton.setVisible(true); restartButtonText.setVisible(true); }
-        
         function resetGame() { 
             score = 0; 
             lives = 3; 
