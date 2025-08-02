@@ -24,6 +24,7 @@
     <script>
         const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
         const spriteScale = isMobile ? Math.min(window.innerWidth / 400, window.innerHeight / 600) : 1;
+        const hudScale = isMobile ? spriteScale * 0.9 : 1;
 
         const config = {
             type: Phaser.WEBGL,
@@ -46,6 +47,7 @@
         let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
         let spawnObstacleEvent, spawnBonusEvent;
         let timer = 0, timerEvent;
+        let musicStarted = false;
         const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
         const game = new Phaser.Game(config);
 
@@ -86,10 +88,11 @@
             obstacles = this.physics.add.group();
             bonuses = this.physics.add.group();
 
-            scoreText = this.add.bitmapText(10, 5, 'vt323', 'SCORE: 0', 28).setDepth(11);
-            timerText = this.add.bitmapText(200, 5, 'vt323', 'TEMPS: 0', 28).setOrigin(0.5, 0).setDepth(11);
-            levelText = this.add.bitmapText(200, 50, 'vt323', 'NIVEAU: 1', 28).setOrigin(0.5).setDepth(11);
-            healthLabel = this.add.bitmapText(300, 5, 'vt323', 'VIE:', 28).setDepth(11);
+            // HUD avec échelle mobile
+            scoreText = this.add.bitmapText(10, 5, 'vt323', 'SCORE: 0', 28 * hudScale).setDepth(11);
+            timerText = this.add.bitmapText(200, 5, 'vt323', 'TEMPS: 0', 28 * hudScale).setOrigin(0.5, 0).setDepth(11);
+            levelText = this.add.bitmapText(200, 50, 'vt323', 'NIVEAU: 1', 28 * hudScale).setOrigin(0.5).setDepth(11);
+            healthLabel = this.add.bitmapText(300, 5, 'vt323', 'VIE:', 28 * hudScale).setDepth(11);
 
             healthHearts = this.add.group();
             updateHearts.call(this);
@@ -129,8 +132,20 @@
                 }
             });
 
-            this.backMusic = this.sound.add('back', { loop: true, volume: 0.5 });
-            this.backMusic.play();
+            // --- Musique uniquement après interaction sur mobile ---
+            if (isMobile) {
+                this.input.once('pointerdown', () => {
+                    if (!musicStarted) {
+                        this.backMusic = this.sound.add('back', { loop: true, volume: 0.5 });
+                        this.backMusic.play();
+                        musicStarted = true;
+                    }
+                });
+            } else {
+                this.backMusic = this.sound.add('back', { loop: true, volume: 0.5 });
+                this.backMusic.play();
+            }
+
             this.bonusSound = this.sound.add('bonus', { volume: 0.15 });
             this.obstacleSound = this.sound.add('obstacle', { volume: 0.2 });
             this.gameOverSound = this.sound.add('gameover', { volume: 0.7 });
@@ -175,20 +190,14 @@
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
         function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
 
-        // ---- Correctif espacement mobile dynamique ----
         function updateHearts() { 
             healthHearts.clear(true, true); 
-
             if (isMobile) {
                 const scale = 0.6 * spriteScale; 
                 const heartWidth = 32 * scale;
                 const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20);
                 let spacing = heartWidth * 1.1;
-
-                if (lives * spacing > availableWidth) {
-                    spacing = availableWidth / lives;
-                }
-
+                if (lives * spacing > availableWidth) spacing = availableWidth / lives;
                 const startX = healthLabel.x + healthLabel.width + 10; 
                 const yPos = 22;
                 for (let i = 0; i < lives; i++) { 
@@ -214,7 +223,7 @@
         }
 
         function endGame() { 
-            if (this.backMusic.isPlaying) this.backMusic.stop(); 
+            if (this.backMusic && this.backMusic.isPlaying) this.backMusic.stop(); 
             this.gameOverSound.play(); 
             this.physics.pause(); 
             player.setTint(0xff0000); 
@@ -266,7 +275,7 @@
             spawnBonusEvent = this.time.addEvent({ delay: 2000, callback: spawnBonus, callbackScope: this, loop: true }); 
             updateHearts.call(this); 
 
-            if (!this.backMusic.isPlaying) this.backMusic.play(); 
+            if (musicStarted && this.backMusic) this.backMusic.play(); 
         }
     </script>
 </body>
