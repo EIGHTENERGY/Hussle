@@ -158,13 +158,14 @@
 
             background.tilePositionY -= roadScrollSpeed * (delta / 16.66);
 
-            player.setVelocity(0);
-            if (cursors.left.isDown) player.setVelocityX(-250);
-            else if (cursors.right.isDown) player.setVelocityX(250);
-            if (cursors.up.isDown) player.setVelocityY(-250);
-            else if (cursors.down.isDown) player.setVelocityY(250);
+            // --- Mouvement fluide du joueur ---
+            const moveSpeed = 250; // pixels/sec
+            if (cursors.left.isDown) player.x -= moveSpeed * (delta / 1000);
+            else if (cursors.right.isDown) player.x += moveSpeed * (delta / 1000);
+            if (cursors.up.isDown) player.y -= moveSpeed * (delta / 1000);
+            else if (cursors.down.isDown) player.y += moveSpeed * (delta / 1000);
 
-            // défilement obstacles & bonus manuel (plus fluide)
+            // --- Défilement obstacles & bonus manuel (plus fluide) ---
             obstacles.children.iterate(obj => { obj.y += obstacleSpeed * (delta / 1000); });
             bonuses.children.iterate(obj => { obj.y += bonusSpeed * (delta / 1000); });
 
@@ -200,16 +201,14 @@
         }
 
         function spawnObstacle() {
-            const obs = obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle')
+            obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle')
                 .setDisplaySize(40 * spriteScale, 40 * spriteScale)
                 .setDepth(1);
-            // plus de setVelocityY
         }
         function spawnBonus() {
-            const bon = bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus')
+            bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus')
                 .setDisplaySize(40 * spriteScale, 40 * spriteScale)
                 .setDepth(1);
-            // plus de setVelocityY
         }
         function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
