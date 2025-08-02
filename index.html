@@ -70,7 +70,7 @@
             this.load.image('road', `image/road${isRetina ? '@2x' : ''}.${ext}`);
             this.load.image('vie', `image/vie${isRetina ? '@2x' : ''}.${ext}`);
 
-            this.load.audio('back', 'son/back.wav');
+            this.load.audio('back', 'son/back.mp3');
             this.load.audio('bonus', 'son/bonus.wav');
             this.load.audio('obstacle', 'son/obstacle.wav');
             this.load.audio('gameover', 'son/gameover.mp3');
@@ -135,13 +135,13 @@
             if (isMobile) {
                 this.input.once('pointerdown', () => {
                     if (!musicStarted) {
-                        this.backMusic = this.sound.add('back', { loop: true, volume: 0.15 });
+                        this.backMusic = this.sound.add('back', { loop: true, volume: 0.10 });
                         this.backMusic.play();
                         musicStarted = true;
                     }
                 });
             } else {
-                this.backMusic = this.sound.add('back', { loop: true, volume: 0.15 });
+                this.backMusic = this.sound.add('back', { loop: true, volume: 0.10 });
                 this.backMusic.play();
                 musicStarted = true;
             }
