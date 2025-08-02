@@ -135,6 +135,7 @@
             if (isMobile) {
                 this.input.once('pointerdown', () => {
                     if (!musicStarted) {
+                        this.sound.unlock(); // déblocage audio mobile
                         this.backMusic = this.sound.add('back', { loop: true, volume: 0.10 });
                         this.backMusic.play();
                         musicStarted = true;
@@ -152,17 +153,23 @@
             this.levelSound = this.sound.add('lvl', { volume: 0.5 });
         }
 
-        function update() {
+        function update(time, delta) {
             if (gameOver) return;
 
-            background.tilePositionY -= roadScrollSpeed;
+            background.tilePositionY -= roadScrollSpeed * (delta / 16.66);
 
             player.setVelocity(0);
-
             if (cursors.left.isDown) player.setVelocityX(-250);
             else if (cursors.right.isDown) player.setVelocityX(250);
             if (cursors.up.isDown) player.setVelocityY(-250);
             else if (cursors.down.isDown) player.setVelocityY(250);
+
+            // défilement obstacles & bonus manuel (plus fluide)
+            obstacles.children.iterate(obj => { obj.y += obstacleSpeed * (delta / 1000); });
+            bonuses.children.iterate(obj => { obj.y += bonusSpeed * (delta / 1000); });
+
+            obstacles.getChildren().forEach(obj => { if (obj.y > 560) obj.destroy(); });
+            bonuses.getChildren().forEach(obj => { if (obj.y > 560) obj.destroy(); });
 
             obstacleSpeed = 120 + level * 15;
             bonusSpeed = 200 + level * 10;
@@ -176,9 +183,6 @@
                 adjustSpawnRates();
             }
             scoreText.setText('SCORE: ' + score);
-
-            obstacles.getChildren().forEach(obj => { if (obj.y > 560) obj.destroy(); });
-            bonuses.getChildren().forEach(obj => { if (obj.y > 560) obj.destroy(); });
         }
 
         function getLevelFromScore(score) { let lvl = 1; for (let i = 1; i < levelThresholds.length; i++) { if (score >= levelThresholds[i]) lvl = i + 1; } return lvl; }
@@ -195,8 +199,18 @@
             levelTimer = scene.time.addEvent({ delay: 1500, callback: () => levelDisplay.setText('') });
         }
 
-        function spawnObstacle() { obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle').setDisplaySize(40 * spriteScale, 40 * spriteScale).setVelocityY(obstacleSpeed).setDepth(1); }
-        function spawnBonus() { bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus').setDisplaySize(40 * spriteScale, 40 * spriteScale).setVelocityY(bonusSpeed).setDepth(1); }
+        function spawnObstacle() {
+            const obs = obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle')
+                .setDisplaySize(40 * spriteScale, 40 * spriteScale)
+                .setDepth(1);
+            // plus de setVelocityY
+        }
+        function spawnBonus() {
+            const bon = bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus')
+                .setDisplaySize(40 * spriteScale, 40 * spriteScale)
+                .setDepth(1);
+            // plus de setVelocityY
+        }
         function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
         function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
@@ -234,7 +248,7 @@
         }
 
         function endGame() { 
-            if (gameOver) return;  // Empêche double déclenchement
+            if (gameOver) return;
             gameOver = true;
 
             if (this.backMusic && this.backMusic.isPlaying) this.backMusic.stop(); 
@@ -246,7 +260,6 @@
             spawnBonusEvent.remove(false); 
             if (timerEvent) timerEvent.remove(false); 
 
-            // Stop animations niveau
             if (levelTween) levelTween.stop();
             if (levelTimer) levelTimer.remove(false);
             levelDisplay.setText('');
@@ -257,7 +270,6 @@
             gameOverText.setAlpha(0); 
             finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); 
 
-            // Timeline fiable
             this.tweens.timeline({
                 tweens: [
                     { targets: gameOverText, alpha: 1, scale: 2, duration: 500, ease: 'Sine.easeOut' },
