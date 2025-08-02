@@ -22,17 +22,20 @@
 <body>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
     <script>
-        // Détection mobile + facteur d'échelle pour les sprites
+        // Détection mobile
         const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+        // Facteur d'échelle pour les sprites uniquement
         const spriteScale = isMobile ? Math.min(window.innerWidth / 400, window.innerHeight / 600) : 1;
 
+        // Configuration Phaser
         const config = {
             type: Phaser.WEBGL,
             scale: {
                 mode: Phaser.Scale.FIT,
                 autoCenter: Phaser.Scale.CENTER_BOTH,
-                width: 400,
-                height: 600
+                width: isMobile ? window.innerWidth : 400,
+                height: isMobile ? window.innerHeight : 600
             },
             render: { antialias: true, roundPixels: true },
             physics: { default: 'arcade', arcade: { debug: false } },
@@ -95,10 +98,10 @@
             healthHearts = this.add.group();
             updateHearts.call(this);
 
-            // Rectangle noir d'origine conservé
+            // Rectangle noir original
             this.add.rectangle(this.scale.width / 2, this.scale.height - 5, this.scale.width, 50, 0x000000, 1).setDepth(10);
 
-            // Texte bas conservé et centré comme avant
+            // Texte bas inchangé
             controlsText = this.add.bitmapText(200, 580, 'vt323', "Get this money, don't get caught !", 20)
                 .setOrigin(0.5)
                 .setDepth(11);
