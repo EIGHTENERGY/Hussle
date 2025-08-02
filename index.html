@@ -175,14 +175,20 @@
         function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
         function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
 
-        // ---- Correctif espacement mobile ----
+        // ---- Correctif espacement mobile dynamique ----
         function updateHearts() { 
             healthHearts.clear(true, true); 
 
             if (isMobile) {
                 const scale = 0.6 * spriteScale; 
                 const heartWidth = 32 * scale;
-                const spacing = heartWidth * 1.2; 
+                const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20);
+                let spacing = heartWidth * 1.1;
+
+                if (lives * spacing > availableWidth) {
+                    spacing = availableWidth / lives;
+                }
+
                 const startX = healthLabel.x + healthLabel.width + 10; 
                 const yPos = 22;
                 for (let i = 0; i < lives; i++) { 
