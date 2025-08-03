@@ -169,7 +169,7 @@ MainScene.prototype.create = function () {
         .setScale(gameOverImageScale * spriteScale)
         .setAlpha(0)
         .setVisible(false)
-        .disableInteractive(); // évite de bloquer le clic sur Retry
+        .disableInteractive();
 
     finalScoreText = this.add.bitmapText(200, 340, 'vt323', '', 36).setOrigin(0.5).setDepth(50);
 
@@ -258,7 +258,40 @@ function spawnBonus() { bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus'
 function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
 function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
 function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
-function updateHearts() { healthHearts.clear(true, true); if (isMobile) { const scale = 0.6 * spriteScale; const heartWidth = 32 * scale; const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20); let spacing = heartWidth * 1.1; if (lives * spacing > availableWidth) spacing = availableWidth / lives; const startX = healthLabel.x + healthLabel.width + 10; const textMidY = healthLabel.y + (healthLabel.height * 0.5); for (let i = 0; i < lives; i++) { let heart = this.add.image(startX + (i * spacing), textMidY, 'vie').setOrigin(0.5, 0.5).setScale(scale).setDepth(11); healthHearts.add(heart); } } else { const startX = 345; const spacing = 19; const scale = 0.4; const yPos = 22; for (let i = 0; i < lives; i++) { let heart = this.add.image(startX + (i * spacing), yPos, 'vie').setOrigin(0.5, 0.5).setScale(scale).setDepth(11); healthHearts.add(heart); } } }
+
+// --- CORRECTIF COEURS ---
+function updateHearts() {
+    healthHearts.clear(true, true);
+    if (isMobile) {
+        const scale = 0.6 * spriteScale;
+        const heartWidth = 32 * scale;
+        const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20);
+        let spacing = heartWidth * 1.1;
+        if (lives * spacing > availableWidth) spacing = availableWidth / lives;
+        const startX = healthLabel.x + healthLabel.width + 10;
+        const textMidY = healthLabel.y + (healthLabel.height * 0.5);
+        for (let i = 0; i < lives; i++) {
+            let heart = this.add.image(startX + (i * spacing), textMidY, 'vie')
+                .setOrigin(0.5, 0.5)
+                .setScale(scale)
+                .setDepth(11);
+            healthHearts.add(heart);
+        }
+    } else {
+        // Positionnement original sur PC (ne bouge pas)
+        const startX = 345;
+        const spacing = 19;
+        const scale = 0.4;
+        const yPos = 22;
+        for (let i = 0; i < lives; i++) {
+            let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
+                .setOrigin(0.5, 0.5)
+                .setScale(scale)
+                .setDepth(11);
+            healthHearts.add(heart);
+        }
+    }
+}
 
 function endGame() { 
     if (gameOver) return; 
