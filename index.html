@@ -1,347 +1,301 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Hussle - Get this money, Don't get caught !</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            background: #000; 
-            font-family: 'vt323', cursive; 
-            overflow: hidden; 
-        }
-        canvas { 
-            display: block; 
-            margin: auto; 
-            touch-action: none; 
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Hussle - Get this money, Don't get caught !</title>
+
+  <!-- viewport optimisé mobile, notch & status bar -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <style>
+    /* base */
+    html, body { height: 100%; }
+    body {
+      margin: 0; padding: 0; background: #000;
+      font-family: 'vt323', cursive;
+      overflow: hidden;
+      /* confort mobile, sans impacter PC */
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-text-size-adjust: 100%;
+      overscroll-behavior: none; /* évite le “pull to refresh” sur mobile */
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    canvas {
+      display: block;
+      margin: auto;
+      touch-action: none;      /* évite le scroll/pinch pendant le jeu */
+      max-width: 100vw;        /* ne dépasse jamais l’écran en CSS */
+      max-height: 100vh;
+    }
+  </style>
 </head>
 <body>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
 <script>
+// ======= Réglage unique de l'espacement des lignes =======
+const STATS_LINE_SPACING = 0.55; // 0.30 (très serré) ←→ 1.00 (large)
+// =========================================================
+
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const spriteScale = isMobile ? Math.min(window.innerWidth / 400, window.innerHeight / 600) : 1;
 const hudScale = isMobile ? spriteScale * 0.9 : 1;
-const baseButtonScale = 0.25;  // taille des boutons
-const gameOverImageScale = 0.3; // <<< taille ajustable de l'image Game Over
+const baseButtonScale = 0.25;
+const gameOverImageScale = 0.3;
 
 const config = {
-    type: Phaser.WEBGL,
-    scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: isMobile ? window.innerWidth : 400,
-        height: isMobile ? window.innerHeight : 600
-    },
-    render: { antialias: true, roundPixels: true },
-    physics: { default: 'arcade', arcade: { debug: false } },
-    scene: [IntroScene, MainScene]
+  type: Phaser.WEBGL,
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: isMobile ? window.innerWidth : 400, height: isMobile ? window.innerHeight : 600 },
+  render: { antialias: true, roundPixels: true },
+  physics: { default: 'arcade', arcade: { debug: false } },
+  scene: [IntroScene, MainScene]
 };
 
 let game = new Phaser.Game(config);
-let musicStarted = false;
-let backMusic = null;
-let gameOverSoundRef = null;
+let musicStarted = false, backMusic = null, gameOverSoundRef = null;
 
-function supportsWebP() {
-    const canvas = document.createElement('canvas');
-    return !!(canvas.getContext && canvas.getContext('2d'))
-        ? canvas.toDataURL('image/webp').indexOf('data:image/webp') == 0
-        : false;
-}
+// Best score
+let bestLocalScore = parseInt(localStorage.getItem('bestScore') || '0', 10);
 
-// --- SCENE INTRO ---
-function IntroScene() { Phaser.Scene.call(this, { key: 'IntroScene' }); }
-IntroScene.prototype = Object.create(Phaser.Scene.prototype);
-IntroScene.prototype.constructor = IntroScene;
-
-IntroScene.prototype.preload = function () {
-    this.load.image('introWebP', 'image/intro.webp');
-    this.load.image('introJPG', 'image/intro.jpg');
-    this.load.image('startBtn', supportsWebP() ? 'image/start.webp' : 'image/start.png');
-    this.load.audio('back', 'son/back.mp3');
-    this.load.audio('back_intro', 'son/back_intro.mp3');
-};
-
-IntroScene.prototype.create = function () {
-    const { width, height } = this.scale;
-    const key = supportsWebP() ? 'introWebP' : 'introJPG';
-    this.add.image(width / 2, height / 2, key).setDisplaySize(width, height);
-
-    this.introMusic = this.sound.add('back_intro', { loop: true, volume: 0.2 });
-    this.introMusic.play();
-
-    const unlockAndPlay = () => {
-        this.sound.unlock();
-        if (!this.introMusic.isPlaying) this.introMusic.play();
-        window.removeEventListener('pointerdown', unlockAndPlay);
-        window.removeEventListener('touchstart', unlockAndPlay);
-    };
-    window.addEventListener('pointerdown', unlockAndPlay);
-    window.addEventListener('touchstart', unlockAndPlay);
-
-    const startButton = this.add.image(width / 2, height * 0.8, 'startBtn')
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true })
-        .setScale(baseButtonScale * spriteScale);
-
-    this.tweens.add({
-        targets: startButton,
-        scale: baseButtonScale * spriteScale * 1.2,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-        duration: 600
-    });
-
-    startButton.on('pointerdown', () => {
-        if (this.introMusic && this.introMusic.isPlaying) {
-            this.introMusic.stop();
-        }
-        this.cameras.main.fadeOut(500, 0, 0, 0);
-        this.time.delayedCall(500, () => this.scene.start('MainScene'));
-    });
-};
-
-// --- SCENE JEU PRINCIPAL ---
-function MainScene() { Phaser.Scene.call(this, { key: 'MainScene' }); }
-MainScene.prototype = Object.create(Phaser.Scene.prototype);
-MainScene.prototype.constructor = MainScene;
-
+// Refs
+let statsContainer = null, scoreLineText = null, timeLineText = null, bestLocalText = null;
 let player, cursors, obstacles, bonuses, background;
 let score = 0, scoreText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
-let gameOverImage, finalScoreText, overlay;
-let restartButton;
+let gameOverImage, finalScoreText, overlay, restartButton, supportButton;
 let level = 1, lives = 3, gameOver = false;
 let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
-let spawnObstacleEvent, spawnBonusEvent;
-let timer = 0, timerEvent;
-let levelTween, levelTimer;
+let spawnObstacleEvent, spawnBonusEvent, timer = 0, timerEvent, levelTween, levelTimer;
 const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
 
-MainScene.prototype.preload = function () {
-    const isRetina = window.devicePixelRatio > 1;
-    const useWebP = supportsWebP();
-    const ext = useWebP ? 'webp' : 'png';
+function supportsWebP(){ const c=document.createElement('canvas'); return !!(c.getContext && c.getContext('2d')) ? c.toDataURL('image/webp').indexOf('data:image/webp')===0 : false; }
 
-    this.load.image('player', `image/player${isRetina ? '@2x' : ''}.${ext}`);
-    this.load.image('obstacle', `image/obstacle${isRetina ? '@2x' : ''}.${ext}`);
-    this.load.image('bonus', `image/bonus${isRetina ? '@2x' : ''}.${ext}`);
-    this.load.image('road', `image/road${isRetina ? '@2x' : ''}.${ext}`);
-    this.load.image('vie', `image/vie${isRetina ? '@2x' : ''}.${ext}`);
-    this.load.image('retryBtn', supportsWebP() ? 'image/retry.webp' : 'image/retry.png');
-    this.load.image('gameOverImg', supportsWebP() ? 'image/game_over.webp' : 'image/game_over.png');
+// ---------- Intro ----------
+function IntroScene(){ Phaser.Scene.call(this,{key:'IntroScene'}); }
+IntroScene.prototype = Object.create(Phaser.Scene.prototype); IntroScene.prototype.constructor = IntroScene;
+IntroScene.prototype.preload = function(){
+  this.load.image('introWebP','image/intro.webp');
+  this.load.image('introJPG','image/intro.jpg');
+  this.load.image('startBtn', supportsWebP() ? 'image/start.webp' : 'image/start.png');
+  this.load.audio('back','son/back.mp3');
+  this.load.audio('back_intro','son/back_intro.mp3');
+};
+IntroScene.prototype.create = function(){
+  const { width, height } = this.scale;
+  const key = supportsWebP() ? 'introWebP' : 'introJPG';
+  this.add.image(width/2, height/2, key).setDisplaySize(width, height);
 
-    this.load.audio('bonus', 'son/bonus.wav');
-    this.load.audio('obstacle', 'son/obstacle.wav');
-    this.load.audio('gameover', 'son/gameover.mp3');
-    this.load.audio('lvl', 'son/lvl.wav');
-    this.load.bitmapFont('vt323', 'fonts/vt323_0.png', 'fonts/vt323.fnt');
+  this.introMusic = this.sound.add('back_intro', { loop:true, volume:0.2 }); this.introMusic.play();
+  const unlock = () => { this.sound.unlock(); if(!this.introMusic.isPlaying) this.introMusic.play();
+    window.removeEventListener('pointerdown', unlock); window.removeEventListener('touchstart', unlock); };
+  window.addEventListener('pointerdown', unlock); window.addEventListener('touchstart', unlock);
+
+  const startButton = this.add.image(width/2, height*0.8, 'startBtn').setOrigin(0.5).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
+  this.tweens.add({ targets:startButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
+  startButton.on('pointerdown', () => { if(this.introMusic?.isPlaying) this.introMusic.stop(); this.cameras.main.fadeOut(500,0,0,0);
+    this.time.delayedCall(500, () => this.scene.start('MainScene')); });
 };
 
-MainScene.prototype.create = function () {
-    background = this.add.tileSprite(200, 300, 400, 1200, 'road').setDepth(0);
+// ---------- Main ----------
+function MainScene(){ Phaser.Scene.call(this,{key:'MainScene'}); }
+MainScene.prototype = Object.create(Phaser.Scene.prototype); MainScene.prototype.constructor = MainScene;
 
-    player = this.physics.add.sprite(200, 400, 'player')
-        .setDisplaySize(40 * spriteScale, 40 * spriteScale)
-        .setCollideWorldBounds(true);
-
-    obstacles = this.physics.add.group();
-    bonuses = this.physics.add.group();
-
-    scoreText = this.add.bitmapText(10, 5, 'vt323', 'SCORE: 0', 28 * hudScale).setDepth(11);
-    timerText = this.add.bitmapText(200, 5, 'vt323', 'TEMPS: 0', 28 * hudScale).setOrigin(0.5, 0).setDepth(11);
-    levelText = this.add.bitmapText(200, 50, 'vt323', 'NIVEAU: 1', 28 * hudScale).setOrigin(0.5).setDepth(11);
-    healthLabel = this.add.bitmapText(300, 5, 'vt323', 'VIE:', 28 * hudScale).setDepth(11);
-
-    healthHearts = this.add.group();
-    updateHearts.call(this);
-
-    levelDisplay = this.add.bitmapText(200, 300, 'vt323', '', 48).setOrigin(0.5).setDepth(20);
-    overlay = this.add.rectangle(200, 300, 400, 600, 0x000000, 0.0).setDepth(49).setVisible(false);
-
-    gameOverImage = this.add.image(200, 220, 'gameOverImg')
-        .setOrigin(0.5)
-        .setDepth(50)
-        .setScale(gameOverImageScale * spriteScale)
-        .setAlpha(0)
-        .setVisible(false)
-        .disableInteractive();
-
-    finalScoreText = this.add.bitmapText(200, 340, 'vt323', '', 36).setOrigin(0.5).setDepth(50);
-
-    restartButton = this.add.image(200, 424, 'retryBtn')
-        .setOrigin(0.5)
-        .setDepth(53)
-        .setVisible(false)
-        .setInteractive({ useHandCursor: true })
-        .setScale(baseButtonScale * spriteScale);
-
-    restartButton.on('pointerdown', () => {
-        resetGame.call(this);
-    });
-
-    this.tweens.add({
-        targets: restartButton,
-        scale: baseButtonScale * spriteScale * 1.2,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-        duration: 600
-    });
-
-    cursors = this.input.keyboard.createCursorKeys();
-    spawnObstacleEvent = this.time.addEvent({ delay: 1200, callback: spawnObstacle, callbackScope: this, loop: true });
-    spawnBonusEvent = this.time.addEvent({ delay: 2000, callback: spawnBonus, callbackScope: this, loop: true });
-    timerEvent = this.time.addEvent({ delay: 1000, callback: () => { timer++; timerText.setText('TEMPS: ' + timer); }, loop: true });
-
-    this.physics.add.overlap(player, obstacles, hitObstacle, null, this);
-    this.physics.add.overlap(player, bonuses, collectBonus, null, this);
-
-    this.input.on('pointermove', pointer => { 
-        if (!gameOver) { 
-            player.x = pointer.x; 
-            player.y = pointer.y - 50; 
-        }
-    });
-
-    if (!musicStarted) {
-        backMusic = this.sound.add('back', { loop: true, volume: 0.15 });
-        backMusic.play();
-        musicStarted = true;
-    }
-
-    this.bonusSound = this.sound.add('bonus', { volume: 0.15 });
-    this.obstacleSound = this.sound.add('obstacle', { volume: 0.2 });
-    gameOverSoundRef = this.sound.add('gameover', { volume: 0.7 });
-    this.levelSound = this.sound.add('lvl', { volume: 0.5 });
+MainScene.prototype.preload = function(){
+  const isRetina = window.devicePixelRatio > 1, useWebP = supportsWebP(), ext = useWebP ? 'webp' : 'png';
+  this.load.image('player',`image/player${isRetina?'@2x':''}.${ext}`);
+  this.load.image('obstacle',`image/obstacle${isRetina?'@2x':''}.${ext}`);
+  this.load.image('bonus',`image/bonus${isRetina?'@2x':''}.${ext}`);
+  this.load.image('road',`image/road${isRetina?'@2x':''}.${ext}`);
+  this.load.image('vie',`image/vie${isRetina?'@2x':''}.${ext}`);
+  this.load.image('retryBtn', supportsWebP() ? 'image/retry.webp' : 'image/retry.png');
+  this.load.image('gameOverImg', supportsWebP() ? 'image/game_over.webp' : 'image/game_over.png');
+  this.load.audio('bonus','son/bonus.wav');
+  this.load.audio('obstacle','son/obstacle.wav');
+  this.load.audio('gameover','son/gameover.mp3');
+  this.load.audio('lvl','son/lvl.wav');
+  this.load.bitmapFont('vt323','fonts/vt323_0.png','fonts/vt323.fnt');
 };
 
-MainScene.prototype.update = function (time, delta) {
-    if (gameOver) return;
-    background.tilePositionY -= roadScrollSpeed * (delta / 16.66);
+MainScene.prototype.create = function(){
+  background = this.add.tileSprite(200,300,400,1200,'road').setDepth(0);
+  player = this.physics.add.sprite(200,400,'player').setDisplaySize(40*spriteScale,40*spriteScale).setCollideWorldBounds(true);
+  obstacles = this.physics.add.group(); bonuses = this.physics.add.group();
 
-    const moveSpeed = 250;
-    if (cursors.left.isDown) player.x -= moveSpeed * (delta / 1000);
-    else if (cursors.right.isDown) player.x += moveSpeed * (delta / 1000);
-    if (cursors.up.isDown) player.y -= moveSpeed * (delta / 1000);
-    else if (cursors.down.isDown) player.y += moveSpeed * (delta / 1000);
+  scoreText = this.add.bitmapText(10,5,'vt323','SCORE: 0',28*hudScale).setDepth(11);
+  timerText = this.add.bitmapText(200,5,'vt323','TEMPS: 0',28*hudScale).setOrigin(0.5,0).setDepth(11);
+  levelText = this.add.bitmapText(200,50,'vt323','NIVEAU: 1',28*hudScale).setOrigin(0.5).setDepth(11);
+  healthLabel = this.add.bitmapText(300,5,'vt323','VIE:',28*hudScale).setDepth(11);
 
-    obstacles.children.iterate(obj => { obj.y += obstacleSpeed * (delta / 1000); });
-    bonuses.children.iterate(obj => { obj.y += bonusSpeed * (delta / 1000); });
+  healthHearts = this.add.group(); updateHearts.call(this);
+  levelDisplay = this.add.bitmapText(200,300,'vt323','',48).setOrigin(0.5).setDepth(20);
+  overlay = this.add.rectangle(200,300,400,600,0x000000,0.0).setDepth(49).setVisible(false);
 
-    obstacles.getChildren().forEach(obj => { if (obj.y > 560) obj.destroy(); });
-    bonuses.getChildren().forEach(obj => { if (obj.y > 560) obj.destroy(); });
+  gameOverImage = this.add.image(200,220,'gameOverImg').setOrigin(0.5).setDepth(50).setScale(gameOverImageScale*spriteScale).setAlpha(0).setVisible(false).disableInteractive();
+  finalScoreText = this.add.bitmapText(200,340,'vt323','',36).setOrigin(0.5).setDepth(50);
 
-    obstacleSpeed = 120 + level * 15;
-    bonusSpeed = 200 + level * 10;
+  restartButton = this.add.image(200,424,'retryBtn').setOrigin(0.5).setDepth(53).setVisible(false).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
+  restartButton.on('pointerdown', () => resetGame.call(this));
+  this.tweens.add({ targets:restartButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
 
-    const newLevel = getLevelFromScore(score);
-    if (newLevel !== level) {
-        level = newLevel;
-        roadScrollSpeed = 2 + (level - 1) * 0.5;
-        levelText.setText('NIVEAU: ' + level);
-        showLevelMessage(this);
-        adjustSpawnRates();
-    }
-    scoreText.setText('SCORE: ' + score);
+  cursors = this.input.keyboard.createCursorKeys();
+  spawnObstacleEvent = this.time.addEvent({ delay:1200, callback:spawnObstacle, callbackScope:this, loop:true });
+  spawnBonusEvent = this.time.addEvent({ delay:2000, callback:spawnBonus, callbackScope:this, loop:true });
+  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
+
+  this.physics.add.overlap(player, obstacles, hitObstacle, null, this);
+  this.physics.add.overlap(player, bonuses, collectBonus, null, this);
+
+  this.input.on('pointermove', p => { if(!gameOver){ player.x = p.x; player.y = p.y - 50; } });
+
+  if (!musicStarted){ backMusic = this.sound.add('back',{ loop:true, volume:0.15 }); backMusic.play(); musicStarted = true; }
+  this.bonusSound = this.sound.add('bonus',{ volume:0.15 });
+  this.obstacleSound = this.sound.add('obstacle',{ volume:0.2 });
+  gameOverSoundRef = this.sound.add('gameover',{ volume:0.7 });
+  this.levelSound = this.sound.add('lvl',{ volume:0.5 });
 };
 
-function getLevelFromScore(score) { let lvl = 1; for (let i = 1; i < levelThresholds.length; i++) { if (score >= levelThresholds[i]) lvl = i + 1; } return lvl; }
-function adjustSpawnRates() { spawnBonusEvent.reset({ delay: Math.max(500, 2500 - level * 300), callback: spawnBonus, callbackScope: this, loop: true }); spawnObstacleEvent.reset({ delay: Math.max(400, 1200 - level * 100), callback: spawnObstacle, callbackScope: this, loop: true }); }
-function showLevelMessage(scene) { if (scene.levelSound) scene.levelSound.play(); levelDisplay.setText("NIVEAU : " + level); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false); levelTween = scene.tweens.add({ targets: levelDisplay, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true }); levelTimer = scene.time.addEvent({ delay: 1500, callback: () => levelDisplay.setText('') }); }
-function spawnObstacle() { obstacles.create(Phaser.Math.Between(50, 350), 50, 'obstacle').setDisplaySize(40 * spriteScale, 40 * spriteScale).setDepth(1); }
-function spawnBonus() { bonuses.create(Phaser.Math.Between(50, 350), 50, 'bonus').setDisplaySize(40 * spriteScale, 40 * spriteScale).setDepth(1); }
-function collectBonus(player, bonus) { bonus.destroy(); score += 50; this.bonusSound.play(); }
-function hitObstacle(player, obstacle) { obstacle.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if (lives <= 0) endGame.call(this); }
-function animateHealthBar() { healthHearts.children.each(heart => { this.tweens.add({ targets: heart, scaleX: heart.scaleX * 1.15, scaleY: heart.scaleY * 1.15, yoyo: true, duration: 150, ease: 'Power2' }); }); }
+MainScene.prototype.update = function(time, delta){
+  if (gameOver) return;
+  background.tilePositionY -= roadScrollSpeed * (delta/16.66);
 
-// --- CORRECTIF COEURS ---
-function updateHearts() {
-    healthHearts.clear(true, true);
-    if (isMobile) {
-        const scale = 0.6 * spriteScale;
-        const heartWidth = 32 * scale;
-        const availableWidth = this.scale.width - (healthLabel.x + healthLabel.width + 20);
-        let spacing = heartWidth * 1.1;
-        if (lives * spacing > availableWidth) spacing = availableWidth / lives;
-        const startX = healthLabel.x + healthLabel.width + 10;
-        const textMidY = healthLabel.y + (healthLabel.height * 0.5);
-        for (let i = 0; i < lives; i++) {
-            let heart = this.add.image(startX + (i * spacing), textMidY, 'vie')
-                .setOrigin(0.5, 0.5)
-                .setScale(scale)
-                .setDepth(11);
-            healthHearts.add(heart);
-        }
-    } else {
-        // Positionnement original sur PC (ne bouge pas)
-        const startX = 345;
-        const spacing = 19;
-        const scale = 0.4;
-        const yPos = 22;
-        for (let i = 0; i < lives; i++) {
-            let heart = this.add.image(startX + (i * spacing), yPos, 'vie')
-                .setOrigin(0.5, 0.5)
-                .setScale(scale)
-                .setDepth(11);
-            healthHearts.add(heart);
-        }
-    }
+  const move = 250;
+  if (cursors.left.isDown) player.x -= move*(delta/1000); else if (cursors.right.isDown) player.x += move*(delta/1000);
+  if (cursors.up.isDown) player.y -= move*(delta/1000); else if (cursors.down.isDown) player.y += move*(delta/1000);
+
+  obstacles.children.iterate(o => { o.y += obstacleSpeed*(delta/1000); });
+  bonuses.children.iterate(b => { b.y += bonusSpeed*(delta/1000); });
+
+  obstacles.getChildren().forEach(o => { if (o.y > 560) o.destroy(); });
+  bonuses.getChildren().forEach(b => { if (b.y > 560) b.destroy(); });
+
+  obstacleSpeed = 120 + level*15; bonusSpeed = 200 + level*10;
+
+  const nl = getLevelFromScore(score);
+  if (nl !== level){ level = nl; roadScrollSpeed = 2 + (level-1)*0.5; levelText.setText('NIVEAU: ' + level); showLevelMessage(this); adjustSpawnRates(); }
+  scoreText.setText('SCORE: ' + score);
+};
+
+function getLevelFromScore(s){ let l=1; for(let i=1;i<levelThresholds.length;i++){ if(s>=levelThresholds[i]) l=i+1; } return l; }
+function adjustSpawnRates(){ spawnBonusEvent.reset({ delay:Math.max(500,2500 - level*300), callback:spawnBonus, callbackScope:this, loop:true }); spawnObstacleEvent.reset({ delay:Math.max(400,1200 - level*100), callback:spawnObstacle, callbackScope:this, loop:true }); }
+function showLevelMessage(scene){ if(scene.levelSound) scene.levelSound.play(); levelDisplay.setText('NIVEAU : ' + level);
+  if(levelTween) levelTween.stop(); if(levelTimer) levelTimer.remove(false);
+  levelTween = scene.tweens.add({ targets:levelDisplay, scaleX:1.5, scaleY:1.5, duration:300, yoyo:true });
+  levelTimer = scene.time.addEvent({ delay:1500, callback:()=>levelDisplay.setText('') });
+}
+function spawnObstacle(){ obstacles.create(Phaser.Math.Between(50,350),50,'obstacle').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1); }
+function spawnBonus(){ bonuses.create(Phaser.Math.Between(50,350),50,'bonus').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1); }
+function collectBonus(p,b){ b.destroy(); score+=50; this.bonusSound.play(); }
+function hitObstacle(p,o){ o.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if(lives<=0) endGame.call(this); }
+function animateHealthBar(){ healthHearts.children.each(h => { this.tweens.add({ targets:h, scaleX:h.scaleX*1.15, scaleY:h.scaleY*1.15, yoyo:true, duration:150, ease:'Power2' }); }); }
+
+function updateHearts(){
+  healthHearts.clear(true,true);
+  if (isMobile){
+    const sc = 0.6*spriteScale, heartW = 32*sc;
+    const available = this.scale.width - (healthLabel.x + healthLabel.width + 20);
+    let spacing = heartW*1.1; if (lives*spacing>available) spacing = available/lives;
+    const startX = healthLabel.x + healthLabel.width + 10, midY = healthLabel.y + (healthLabel.height*0.5);
+    for (let i=0;i<lives;i++){ let h = this.add.image(startX + (i*spacing), midY, 'vie').setOrigin(0.5).setScale(sc).setDepth(11); healthHearts.add(h); }
+  } else {
+    const startX=345, spacing=19, sc=0.4, y=22;
+    for (let i=0;i<lives;i++){ let h = this.add.image(startX + (i*spacing), y, 'vie').setOrigin(0.5).setScale(sc).setDepth(11); healthHearts.add(h); }
+  }
 }
 
-function endGame() { 
-    if (gameOver) return; 
-    gameOver = true; 
-    if (backMusic && backMusic.isPlaying) backMusic.stop(); 
-    if (gameOverSoundRef) gameOverSoundRef.play(); 
-    this.physics.pause(); 
-    player.setTint(0xff0000); 
-    spawnObstacleEvent.remove(false); 
-    spawnBonusEvent.remove(false); 
-    if (timerEvent) timerEvent.remove(false); 
-    if (levelTween) levelTween.stop(); 
-    if (levelTimer) levelTimer.remove(false); 
-    levelDisplay.setText(''); 
-    overlay.setVisible(true); 
+function endGame(){
+  if (gameOver) return; gameOver = true;
+  if (backMusic?.isPlaying) backMusic.stop();
+  if (gameOverSoundRef) gameOverSoundRef.play();
+  this.physics.pause(); player.setTint(0xff0000);
+  spawnObstacleEvent.remove(false); spawnBonusEvent.remove(false);
+  if (timerEvent) timerEvent.remove(false); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false);
+  levelDisplay.setText(''); overlay.setVisible(true);
 
-    gameOverImage.setVisible(true);
-    this.tweens.add({ targets: gameOverImage, alpha: 1, duration: 500, ease: 'Sine.easeOut' });
+  const centerX = this.scale.width/2, centerY = this.scale.height/2;
+  const layout = { img:-120, retry:95, support:155 };
 
-    finalScoreText.setText('SCORE : ' + score + '\nTEMPS : ' + timer + 's'); 
-    restartButton.setVisible(true); 
+  // Game Over
+  gameOverImage.setVisible(true).setPosition(centerX, centerY + layout.img);
+  this.tweens.add({ targets:gameOverImage, alpha:1, duration:500, ease:'Sine.easeOut' });
+
+  // Retry
+  restartButton.setVisible(true).setPosition(centerX, centerY + layout.retry);
+
+  // Best score
+  if (score > bestLocalScore){ bestLocalScore = score; localStorage.setItem('bestScore', String(bestLocalScore)); }
+
+  // ===== Bloc stats : espacement contrôlé par STATS_LINE_SPACING =====
+  const statsSize = 28;
+  const step = Math.max(1, statsSize * STATS_LINE_SPACING); // sécurité
+
+  // Lignes centrées autour de 0 avec espacement fixe [-step, 0, +step]
+  scoreLineText = this.add.bitmapText(0, -step, 'vt323', 'SCORE : ' + score, statsSize).setOrigin(0.5);
+  timeLineText  = this.add.bitmapText(0, 0,     'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
+  bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
+
+  // Position du container exactement entre bas de l'image et haut du bouton
+  const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
+  const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
+  const midY = (bottomOfOver + topOfRetry) / 2;
+
+  if (statsContainer) statsContainer.destroy();
+  statsContainer = this.add.container(centerX, midY, [scoreLineText, timeLineText, bestLocalText]).setDepth(50);
+
+  // --- Soutenir le jeu
+  if (supportButton) supportButton.destroy();
+  supportButton = this.add.container(centerX, centerY + layout.support).setDepth(60);
+
+  const heartScale = 0.4, gap = 8;
+  const supportText = this.add.bitmapText(0,0,'vt323','SOUTENIR LE JEU',28).setOrigin(0.5);
+  const heartLeft  = this.add.image(0,0,'vie').setScale(heartScale).setOrigin(0.5);
+  const heartRight = this.add.image(0,0,'vie').setScale(heartScale).setOrigin(0.5);
+
+  const heartW = heartLeft.displayWidth, heartH = heartLeft.displayHeight;
+  const textW  = supportText.width,     textH  = supportText.height;
+
+  supportText.x = 0;
+  heartLeft.x   = -(textW/2 + gap + heartW/2);
+  heartRight.x  =  (textW/2 + gap + heartW/2);
+
+  const vOff = (textH/2) - (heartH/2);
+  heartLeft.y = vOff; heartRight.y = vOff;
+
+  supportButton.add([heartLeft, supportText, heartRight]);
+  supportButton.setSize(heartW + gap + textW + gap + heartW + 20, Math.max(textH, heartH) + 12);
+  supportButton.setInteractive({ useHandCursor:true });
+
+  this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
+  supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
 }
 
-function resetGame() { 
-    score = 0; 
-    lives = 3; 
-    level = 1; 
-    timer = 0; 
-    gameOver = false; 
-    obstacleSpeed = 120; 
-    bonusSpeed = 200; 
-    roadScrollSpeed = 2; 
-    scoreText.setText('SCORE: 0'); 
-    timerText.setText('TEMPS: 0'); 
-    levelText.setText('NIVEAU: 1'); 
-    finalScoreText.setText(''); 
-    gameOverImage.setVisible(false).setAlpha(0); 
-    overlay.setVisible(false); 
-    restartButton.setVisible(false); 
-    player.clearTint(); 
-    player.setPosition(200, 400); 
-    obstacles.clear(true, true); 
-    bonuses.clear(true, true); 
-    this.physics.resume(); 
-    timerEvent = this.time.addEvent({ delay: 1000, callback: () => { timer++; timerText.setText('TEMPS: ' + timer); }, loop: true }); 
-    spawnObstacleEvent = this.time.addEvent({ delay: 1200, callback: spawnObstacle, callbackScope: this, loop: true }); 
-    spawnBonusEvent = this.time.addEvent({ delay: 2000, callback: spawnBonus, callbackScope: this, loop: true }); 
-    updateHearts.call(this); 
-    if (gameOverSoundRef && gameOverSoundRef.isPlaying) gameOverSoundRef.stop(); 
-    if (backMusic) backMusic.play(); 
+function resetGame(){
+  score=0; lives=3; level=1; timer=0; gameOver=false;
+  obstacleSpeed=120; bonusSpeed=200; roadScrollSpeed=2;
+  scoreText.setText('SCORE: 0'); timerText.setText('TEMPS: 0'); levelText.setText('NIVEAU: 1');
+  finalScoreText.setText('');
+  gameOverImage.setVisible(false).setAlpha(0); overlay.setVisible(false); restartButton.setVisible(false);
+
+  if (supportButton){ supportButton.destroy(); supportButton=null; }
+  if (statsContainer){ statsContainer.destroy(); statsContainer=null; }
+  if (scoreLineText){ scoreLineText.destroy(); scoreLineText=null; }
+  if (timeLineText){ timeLineText.destroy(); timeLineText=null; }
+  if (bestLocalText){ bestLocalText.destroy(); bestLocalText=null; }
+
+  player.clearTint(); player.setPosition(200,400);
+  obstacles.clear(true,true); bonuses.clear(true,true);
+  this.physics.resume();
+  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
+  spawnObstacleEvent = this.time.addEvent({ delay:1200, callback:spawnObstacle, callbackScope:this, loop:true });
+  spawnBonusEvent = this.time.addEvent({ delay:2000, callback:spawnBonus, callbackScope:this, loop:true });
+  updateHearts.call(this);
+  if (gameOverSoundRef?.isPlaying) gameOverSoundRef.stop();
+  if (backMusic) backMusic.play();
 }
 </script>
 </body>
