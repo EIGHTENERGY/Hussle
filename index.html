@@ -1,3 +1,7 @@
+Voici ton fichier complet, prêt à copier-coller, avec le bouton **SOUTENIR LE JEU** et ses **deux cœurs** ancrés **tout en bas de l’écran** (PC et mobile), et cliquable sur mobile.
+J’ai ajouté une fonction `placeSupportBottom()` qui calcule la position exacte en bas (en tenant compte de la hauteur réelle du canvas) et j’appelle cette fonction à la création du bouton et lors des changements de viewport (utile pour l’apparition/disparition de la barre d’URL sur mobile). Le jeu n’est pas altéré.
+
+```html
 <!DOCTYPE html>
 <html>
 <head>
@@ -158,6 +162,15 @@ MainScene.prototype.create = function(){
   this.obstacleSound = this.sound.add('obstacle',{ volume:0.2 });
   gameOverSoundRef = this.sound.add('gameover',{ volume:0.7 });
   this.levelSound = this.sound.add('lvl',{ volume:0.5 });
+
+  // Repositionner au resize (utile si la barre d’URL mobile apparaît/disparaît)
+  this.scale.on('resize', () => placeSupportBottom(this));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => placeSupportBottom(this));
+    window.visualViewport.addEventListener('scroll', () => placeSupportBottom(this));
+  } else {
+    window.addEventListener('resize', () => placeSupportBottom(this));
+  }
 };
 
 MainScene.prototype.update = function(time, delta){
@@ -208,6 +221,20 @@ function updateHearts(){
   }
 }
 
+function placeSupportBottom(scene){
+  if (!supportButton) return;
+  const canvasH = scene.scale.height;
+  const bounds = supportButton.getBounds();
+  const halfH = bounds.height / 2;
+
+  // marge plus grande pour ne pas être coupé (par défaut ~40px)
+  const safeMargin = (parseFloat(getComputedStyle(document.body).paddingBottom) || 0) + 40;
+
+  // place le centre du bouton au-dessus de la marge
+  supportButton.setY(canvasH - safeMargin - halfH);
+}
+
+
 function endGame(){
   if (gameOver) return; gameOver = true;
   if (backMusic?.isPlaying) backMusic.stop();
@@ -218,7 +245,7 @@ function endGame(){
   levelDisplay.setText(''); overlay.setVisible(true);
 
   const centerX = this.scale.width/2, centerY = this.scale.height/2;
-  const layout = { img:-120, retry:95, support:155 };
+  const layout = { img:-120, retry:95 }; // <-- plus de "support" fixe
 
   // Game Over
   gameOverImage.setVisible(true).setPosition(centerX, centerY + layout.img);
@@ -247,9 +274,9 @@ function endGame(){
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [scoreLineText, timeLineText, bestLocalText]).setDepth(50);
 
-  // --- Soutenir le jeu
+  // --- Soutenir le jeu (ANCRÉ EN BAS)
   if (supportButton) supportButton.destroy();
-  supportButton = this.add.container(centerX, centerY + layout.support).setDepth(60);
+  supportButton = this.add.container(centerX, 0).setDepth(60);
 
   const heartScale = 0.4, gap = 8;
   const supportText = this.add.bitmapText(0,0,'vt323','SOUTENIR LE JEU',28).setOrigin(0.5);
@@ -270,7 +297,16 @@ function endGame(){
   supportButton.setSize(heartW + gap + textW + gap + heartW + 20, Math.max(textH, heartH) + 12);
   supportButton.setInteractive({ useHandCursor:true });
 
+  // Animation des cœurs
   this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
+
+  // Positionne en bas de l’écran (PC & mobile)
+  placeSupportBottom(this);
+
+  // S’actualise si le viewport change (barre d’URL mobile, rotation, etc.)
+  this.time.delayedCall(0, () => placeSupportBottom(this)); // sécurité après calcul des tailles
+
+  // Clic (fonctionne sur mobile, gesture user)
   supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
 }
 
@@ -300,3 +336,4 @@ function resetGame(){
 </script>
 </body>
 </html>
+```
