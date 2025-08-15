@@ -11,8 +11,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <style>
-    /* base */
-    html, body { height: 100%; }
+    /* base — passe en hauteur dynamique pour coller au viewport réel sur mobile */
+    html, body { height: 100dvh; }
     body {
       margin: 0; padding: 0; background: #000;
       font-family: 'vt323', cursive;
@@ -33,7 +33,7 @@
       margin: auto;
       touch-action: none;
       max-width: 100vw;
-      max-height: 100vh;
+      max-height: 100dvh; /* au lieu de 100vh */
     }
   </style>
 </head>
@@ -297,7 +297,7 @@ function endGame(){
 
   scoreLineText = this.add.bitmapText(0, -step, 'vt323', 'SCORE : ' + score, statsSize).setOrigin(0.5);
   timeLineText  = this.add.bitmapText(0, 0,     'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
-  bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
+  bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5); // <- corrigé
 
   const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
   const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
