@@ -84,13 +84,14 @@ let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
 let spawnObstacleEvent, spawnBonusEvent, timer = 0, timerEvent, levelTween, levelTimer;
 const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
 
-/* Zones de clic mobile (créées uniquement sur mobile à l'écran de fin) */
+/* ----- Zones et garde mobile ----- */
 let mobileRetryZone = null;
 let mobileSupportZone = null;
+let mobileTapReady = false; // devient true seulement après avoir levé le doigt sur l'écran de fin
 
 function supportsWebP(){ const c=document.createElement('canvas'); return !!(c.getContext && c.getContext('2d')) ? c.toDataURL('image/webp').indexOf('data:image/webp')===0 : false; }
 
-/* ---------- Intro ---------- */
+// ---------- Intro ----------
 function IntroScene(){ Phaser.Scene.call(this,{key:'IntroScene'}); }
 IntroScene.prototype = Object.create(Phaser.Scene.prototype); IntroScene.prototype.constructor = IntroScene;
 IntroScene.prototype.preload = function(){
@@ -116,7 +117,7 @@ IntroScene.prototype.create = function(){
     this.time.delayedCall(500, () => this.scene.start('MainScene')); });
 };
 
-/* ---------- Main ---------- */
+// ---------- Main ----------
 function MainScene(){ Phaser.Scene.call(this,{key:'MainScene'}); }
 MainScene.prototype = Object.create(Phaser.Scene.prototype); MainScene.prototype.constructor = MainScene;
 
@@ -215,6 +216,7 @@ MainScene.prototype.update = function(time, delta){
 
 function getLevelFromScore(s){ let l=1; for(let i=1;i<levelThresholds.length;i++){ if(s>=levelThresholds[i]) l=i+1; } return l; }
 function adjustSpawnRates(){
+  // ✅ recrée les events avec le bon scope (la scène)
   if (spawnBonusEvent) spawnBonusEvent.reset({
     delay: Math.max(500, 2500 - level*300),
     callback: spawnBonus,
@@ -331,33 +333,45 @@ function endGame(){
   placeSupportBottom(this);
   this.time.delayedCall(0, () => placeSupportBottom(this));
 
-  // ----- ZONES EXCLUSIVES SUR MOBILE -----
+  /* ----------- Spécifique MOBILE : deux zones + garde “fresh tap” ----------- */
   if (isMobile) {
+    mobileTapReady = false; // pas de relance tant qu'on n'a pas levé le doigt une fois
+    // Dès que l'utilisateur lève le doigt après l'apparition de l'écran de fin, on arme les actions
+    this.input.once('pointerup', () => { mobileTapReady = true; });
+
+    // On désactive l'interaction du bouton image (sinon double-trigger possible sur mobile)
+    restartButton.disableInteractive();
+
     // Zone RETRY (autour du bouton)
     const retryW = restartButton.displayWidth * 1.6;
     const retryH = restartButton.displayHeight * 1.8;
     mobileRetryZone = this.add.zone(restartButton.x, restartButton.y, retryW, retryH)
       .setOrigin(0.5).setDepth(999).setInteractive();
+
     mobileRetryZone.on('pointerup', (pointer) => {
-      const ev = pointer && pointer.event;
-      if (ev) { ev.stopPropagation?.(); ev.preventDefault?.(); }
+      if (!mobileTapReady) return; // exige un “fresh tap”
+      mobileTapReady = false;      // évite toute boucle
+      pointer?.event?.stopPropagation?.();
+      pointer?.event?.preventDefault?.();
       resetGame.call(this);
     });
 
-    // Zone SOUTENIR (large bande en bas de l'écran)
+    // Zone SOUTENIR (bande basse)
     const bandH = Math.max(120, supportButton.getBounds().height + 40);
     mobileSupportZone = this.add.zone(centerX, this.scale.height - bandH/2, this.scale.width, bandH)
       .setOrigin(0.5).setDepth(999).setInteractive();
+
     mobileSupportZone.on('pointerup', (pointer) => {
-      const ev = pointer && pointer.event;
-      if (ev) { ev.stopPropagation?.(); ev.preventDefault?.(); }
-      // Essai d'ouverture dans un nouvel onglet, sinon même onglet
+      if (!mobileTapReady) return; // exige un “fresh tap”
+      mobileTapReady = false;
+      pointer?.event?.stopPropagation?.();
+      pointer?.event?.preventDefault?.();
       const url = 'https://paypal.me/eightenergyworld';
       const w = window.open(url, '_blank', 'noopener');
       if (!w) window.location.href = url;
     });
   } else {
-    // PC : on garde ton code tel quel (ouverture sur clic du container)
+    // PC : inchangé (clic sur le container “support” ouvre la page)
     supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
   }
 }
@@ -369,9 +383,10 @@ function resetGame(){
   finalScoreText.setText('');
   gameOverImage.setVisible(false).setAlpha(0); overlay.setVisible(false); restartButton.setVisible(false);
 
-  // Détruit les zones mobiles si elles existent
+  // Nettoyage mobile
   if (mobileRetryZone) { mobileRetryZone.destroy(); mobileRetryZone = null; }
   if (mobileSupportZone) { mobileSupportZone.destroy(); mobileSupportZone = null; }
+  mobileTapReady = false;
 
   if (supportButton){ supportButton.destroy(); supportButton=null; }
   if (statsContainer){ statsContainer.destroy(); statsContainer=null; }
@@ -388,6 +403,9 @@ function resetGame(){
   updateHearts.call(this);
   if (gameOverSoundRef?.isPlaying) gameOverSoundRef.stop();
   if (backMusic) backMusic.play();
+
+  // Réactive le bouton image original après reset (pour PC et pour mobile ensuite)
+  restartButton.setInteractive({useHandCursor:true});
 }
 </script>
 </body>
