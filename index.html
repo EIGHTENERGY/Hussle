@@ -1,7 +1,3 @@
-Voici ton fichier complet, prêt à copier-coller, avec le bouton **SOUTENIR LE JEU** et ses **deux cœurs** ancrés **tout en bas de l’écran** (PC et mobile), et cliquable sur mobile.
-J’ai ajouté une fonction `placeSupportBottom()` qui calcule la position exacte en bas (en tenant compte de la hauteur réelle du canvas) et j’appelle cette fonction à la création du bouton et lors des changements de viewport (utile pour l’apparition/disparition de la barre d’URL sur mobile). Le jeu n’est pas altéré.
-
-```html
 <!DOCTYPE html>
 <html>
 <head>
@@ -21,22 +17,22 @@ J’ai ajouté une fonction `placeSupportBottom()` qui calcule la position exact
       margin: 0; padding: 0; background: #000;
       font-family: 'vt323', cursive;
       overflow: hidden;
-      /* confort mobile, sans impacter PC */
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
       -webkit-text-size-adjust: 100%;
       overscroll-behavior: none; /* évite le “pull to refresh” sur mobile */
+      /* (retiré pour ne pas décentrer le canvas)
       padding-left: env(safe-area-inset-left);
       padding-right: env(safe-area-inset-right);
       padding-top: env(safe-area-inset-top);
-      padding-bottom: env(safe-area-inset-bottom);
+      padding-bottom: env(safe-area-inset-bottom); */
     }
     canvas {
       display: block;
       margin: auto;
-      touch-action: none;      /* évite le scroll/pinch pendant le jeu */
-      max-width: 100vw;        /* ne dépasse jamais l’écran en CSS */
+      touch-action: none;
+      max-width: 100vw;
       max-height: 100vh;
     }
   </style>
@@ -45,18 +41,28 @@ J’ai ajouté une fonction `placeSupportBottom()` qui calcule la position exact
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
 <script>
 // ======= Réglage unique de l'espacement des lignes =======
-const STATS_LINE_SPACING = 0.55; // 0.30 (très serré) ←→ 1.00 (large)
+const STATS_LINE_SPACING = 0.55;
 // =========================================================
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const spriteScale = isMobile ? Math.min(window.innerWidth / 400, window.innerHeight / 600) : 1;
-const hudScale = isMobile ? spriteScale * 0.9 : 1;
+
+// Résolution virtuelle fixe (comme PC) + FIT
+const spriteScale = 1;
+const hudScale = 1;
 const baseButtonScale = 0.25;
 const gameOverImageScale = 0.3;
 
+const GAME_W = 400;
+const GAME_H = 600;
+
 const config = {
   type: Phaser.WEBGL,
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: isMobile ? window.innerWidth : 400, height: isMobile ? window.innerHeight : 600 },
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: GAME_W,
+    height: GAME_H
+  },
   render: { antialias: true, roundPixels: true },
   physics: { default: 'arcade', arcade: { debug: false } },
   scene: [IntroScene, MainScene]
@@ -127,7 +133,12 @@ MainScene.prototype.preload = function(){
 };
 
 MainScene.prototype.create = function(){
-  background = this.add.tileSprite(200,300,400,1200,'road').setDepth(0);
+  const w = this.scale.width, h = this.scale.height;
+  const cx = w/2, cy = h/2;
+
+  background = this.add.tileSprite(cx, cy, w, h*2, 'road').setDepth(0);
+
+  // Positions identiques PC
   player = this.physics.add.sprite(200,400,'player').setDisplaySize(40*spriteScale,40*spriteScale).setCollideWorldBounds(true);
   obstacles = this.physics.add.group(); bonuses = this.physics.add.group();
 
@@ -163,7 +174,6 @@ MainScene.prototype.create = function(){
   gameOverSoundRef = this.sound.add('gameover',{ volume:0.7 });
   this.levelSound = this.sound.add('lvl',{ volume:0.5 });
 
-  // Repositionner au resize (utile si la barre d’URL mobile apparaît/disparaît)
   this.scale.on('resize', () => placeSupportBottom(this));
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => placeSupportBottom(this));
@@ -190,29 +200,57 @@ MainScene.prototype.update = function(time, delta){
   obstacleSpeed = 120 + level*15; bonusSpeed = 200 + level*10;
 
   const nl = getLevelFromScore(score);
-  if (nl !== level){ level = nl; roadScrollSpeed = 2 + (level-1)*0.5; levelText.setText('NIVEAU: ' + level); showLevelMessage(this); adjustSpawnRates(); }
+  if (nl !== level){
+    level = nl; roadScrollSpeed = 2 + (level-1)*0.5;
+    levelText.setText('NIVEAU: ' + level);
+    showLevelMessage(this);
+    adjustSpawnRates.call(this); // ✅ important : garder le scope scène
+  }
   scoreText.setText('SCORE: ' + score);
 };
 
 function getLevelFromScore(s){ let l=1; for(let i=1;i<levelThresholds.length;i++){ if(s>=levelThresholds[i]) l=i+1; } return l; }
-function adjustSpawnRates(){ spawnBonusEvent.reset({ delay:Math.max(500,2500 - level*300), callback:spawnBonus, callbackScope:this, loop:true }); spawnObstacleEvent.reset({ delay:Math.max(400,1200 - level*100), callback:spawnObstacle, callbackScope:this, loop:true }); }
+function adjustSpawnRates(){
+  // ✅ recrée les events avec le bon scope (la scène)
+  if (spawnBonusEvent) spawnBonusEvent.reset({
+    delay: Math.max(500, 2500 - level*300),
+    callback: spawnBonus,
+    callbackScope: this,
+    loop: true
+  });
+  if (spawnObstacleEvent) spawnObstacleEvent.reset({
+    delay: Math.max(400, 1200 - level*100),
+    callback: spawnObstacle,
+    callbackScope: this,
+    loop: true
+  });
+}
 function showLevelMessage(scene){ if(scene.levelSound) scene.levelSound.play(); levelDisplay.setText('NIVEAU : ' + level);
   if(levelTween) levelTween.stop(); if(levelTimer) levelTimer.remove(false);
   levelTween = scene.tweens.add({ targets:levelDisplay, scaleX:1.5, scaleY:1.5, duration:300, yoyo:true });
   levelTimer = scene.time.addEvent({ delay:1500, callback:()=>levelDisplay.setText('') });
 }
-function spawnObstacle(){ obstacles.create(Phaser.Math.Between(50,350),50,'obstacle').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1); }
-function spawnBonus(){ bonuses.create(Phaser.Math.Between(50,350),50,'bonus').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1); }
+function spawnObstacle(){
+  const w = this.scale.width;
+  obstacles.create(Phaser.Math.Between(50, w-50), 50, 'obstacle').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1);
+}
+function spawnBonus(){
+  const w = this.scale.width;
+  bonuses.create(Phaser.Math.Between(50, w-50), 50, 'bonus').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1);
+}
 function collectBonus(p,b){ b.destroy(); score+=50; this.bonusSound.play(); }
 function hitObstacle(p,o){ o.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if(lives<=0) endGame.call(this); }
 function animateHealthBar(){ healthHearts.children.each(h => { this.tweens.add({ targets:h, scaleX:h.scaleX*1.15, scaleY:h.scaleY*1.15, yoyo:true, duration:150, ease:'Power2' }); }); }
 
+/* Cœurs :
+   - PC : position fixe (startX=345, spacing=19, sc=0.4, y=22)
+   - Mobile : adaptatif */
 function updateHearts(){
   healthHearts.clear(true,true);
   if (isMobile){
     const sc = 0.6*spriteScale, heartW = 32*sc;
     const available = this.scale.width - (healthLabel.x + healthLabel.width + 20);
-    let spacing = heartW*1.1; if (lives*spacing>available) spacing = available/lives;
+    let spacing = heartW*1.1; if (lives*spacing>available) spacing = available/Math.max(1,lives);
     const startX = healthLabel.x + healthLabel.width + 10, midY = healthLabel.y + (healthLabel.height*0.5);
     for (let i=0;i<lives;i++){ let h = this.add.image(startX + (i*spacing), midY, 'vie').setOrigin(0.5).setScale(sc).setDepth(11); healthHearts.add(h); }
   } else {
@@ -226,14 +264,9 @@ function placeSupportBottom(scene){
   const canvasH = scene.scale.height;
   const bounds = supportButton.getBounds();
   const halfH = bounds.height / 2;
-
-  // marge plus grande pour ne pas être coupé (par défaut ~40px)
-  const safeMargin = (parseFloat(getComputedStyle(document.body).paddingBottom) || 0) + 40;
-
-  // place le centre du bouton au-dessus de la marge
+  const safeMargin = 40;
   supportButton.setY(canvasH - safeMargin - halfH);
 }
-
 
 function endGame(){
   if (gameOver) return; gameOver = true;
@@ -245,28 +278,22 @@ function endGame(){
   levelDisplay.setText(''); overlay.setVisible(true);
 
   const centerX = this.scale.width/2, centerY = this.scale.height/2;
-  const layout = { img:-120, retry:95 }; // <-- plus de "support" fixe
+  const layout = { img:-120, retry:95 };
 
-  // Game Over
-  gameOverImage.setVisible(true).setPosition(centerX, centerY + layout.img);
+  gameOverImage.setVisible(true).setPosition(200,220);
   this.tweens.add({ targets:gameOverImage, alpha:1, duration:500, ease:'Sine.easeOut' });
 
-  // Retry
-  restartButton.setVisible(true).setPosition(centerX, centerY + layout.retry);
+  restartButton.setVisible(true).setPosition(200,424);
 
-  // Best score
   if (score > bestLocalScore){ bestLocalScore = score; localStorage.setItem('bestScore', String(bestLocalScore)); }
 
-  // ===== Bloc stats : espacement contrôlé par STATS_LINE_SPACING =====
   const statsSize = 28;
-  const step = Math.max(1, statsSize * STATS_LINE_SPACING); // sécurité
+  const step = Math.max(1, statsSize * STATS_LINE_SPACING);
 
-  // Lignes centrées autour de 0 avec espacement fixe [-step, 0, +step]
   scoreLineText = this.add.bitmapText(0, -step, 'vt323', 'SCORE : ' + score, statsSize).setOrigin(0.5);
   timeLineText  = this.add.bitmapText(0, 0,     'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
   bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
 
-  // Position du container exactement entre bas de l'image et haut du bouton
   const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
   const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
   const midY = (bottomOfOver + topOfRetry) / 2;
@@ -274,7 +301,6 @@ function endGame(){
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [scoreLineText, timeLineText, bestLocalText]).setDepth(50);
 
-  // --- Soutenir le jeu (ANCRÉ EN BAS)
   if (supportButton) supportButton.destroy();
   supportButton = this.add.container(centerX, 0).setDepth(60);
 
@@ -297,16 +323,10 @@ function endGame(){
   supportButton.setSize(heartW + gap + textW + gap + heartW + 20, Math.max(textH, heartH) + 12);
   supportButton.setInteractive({ useHandCursor:true });
 
-  // Animation des cœurs
   this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
 
-  // Positionne en bas de l’écran (PC & mobile)
   placeSupportBottom(this);
-
-  // S’actualise si le viewport change (barre d’URL mobile, rotation, etc.)
-  this.time.delayedCall(0, () => placeSupportBottom(this)); // sécurité après calcul des tailles
-
-  // Clic (fonctionne sur mobile, gesture user)
+  this.time.delayedCall(0, () => placeSupportBottom(this));
   supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
 }
 
@@ -336,4 +356,3 @@ function resetGame(){
 </script>
 </body>
 </html>
-```
