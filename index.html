@@ -34,6 +34,68 @@
   </style>
 </head>
 <body>
+
+<!-- Firebase (compat pour usage direct en <script>) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+<script>
+  /* ====== CONFIGURATION FIREBASE (TES VALEURS) ====== */
+  const firebaseConfig = {
+    apiKey: "AIzaSyAwQKptiehYxigqjxOwRvDBv7gkdYCcRAk",
+    authDomain: "get-this-money.firebaseapp.com",
+    projectId: "get-this-money",
+    storageBucket: "get-this-money.firebasestorage.app",
+    messagingSenderId: "529212382767",
+    appId: "1:529212382767:web:2e723af6f81bad47a730da"
+  };
+
+  let firebaseReady = false;
+  let db = null;
+
+  (function initFirebaseSafe(){
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      firebaseReady = true;
+      console.log('[Firebase] OK');
+    } catch(e){
+      console.warn('[Firebase] Non initialisé. Le jeu continue sans global score.', e);
+    }
+  })();
+
+  // Sauvegarder un score (non bloquant si Firebase KO)
+  async function saveScore(player, score) {
+    if (!firebaseReady || !db) return;
+    try {
+      await db.collection("scores").add({
+        player: player,
+        score: score,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('[Firebase] saveScore erreur:', e);
+    }
+  }
+
+  // Lire le meilleur score global (retourne 0 si indisponible)
+  async function getBestGlobalScore() {
+    if (!firebaseReady || !db) return 0;
+    try {
+      const snap = await db.collection("scores")
+        .orderBy("score", "desc")
+        .limit(1)
+        .get();
+      if (!snap.empty) {
+        return snap.docs[0].data().score || 0;
+      }
+      return 0;
+    } catch (e) {
+      console.warn('[Firebase] getBestGlobalScore erreur:', e);
+      return 0;
+    }
+  }
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
 <script>
 // ======= Réglage unique de l'espacement des lignes =======
@@ -75,7 +137,7 @@ let musicStarted = false, backMusic = null, gameOverSoundRef = null;
 let bestLocalScore = parseInt(localStorage.getItem('bestScore') || '0', 10);
 
 // Refs
-let statsContainer = null, scoreLineText = null, timeLineText = null, bestLocalText = null;
+let statsContainer = null, scoreLineText = null, timeLineText = null, bestLocalText = null, globalLineText = null;
 let player, cursors, obstacles, bonuses, background;
 let score = 0, scoreText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
 let gameOverImage, finalScoreText, overlay, restartButton, supportButton;
@@ -169,7 +231,7 @@ MainScene.prototype.create = function(){
   cursors = this.input.keyboard.createCursorKeys();
   spawnObstacleEvent = this.time.addEvent({ delay:1200, callback:spawnObstacle, callbackScope:this, loop:true });
   spawnBonusEvent = this.time.addEvent({ delay:2000, callback:spawnBonus, callbackScope:this, loop:true });
-  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: 0' + timer); }, loop:true });
+  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
 
   this.physics.add.overlap(player, obstacles, hitObstacle, null, this);
   this.physics.add.overlap(player, bonuses, collectBonus, null, this);
@@ -304,12 +366,23 @@ function endGame(){
   timeLineText  = this.add.bitmapText(0, 0,     'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
   bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
 
-  const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
-  const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
-  const midY = (bottomOfOver + topOfRetry) / 2;
+  // Placeholder pour le global (sera mis à jour après lecture Firestore)
+  globalLineText = this.add.bitmapText(0, step * 2, 'vt323', 'MEILLEUR SCORE (TOUS) : ...', statsSize).setOrigin(0.5);
 
-  if (statsContainer) statsContainer.destroy();
-  statsContainer = this.add.container(centerX, midY, [scoreLineText, timeLineText, bestLocalText]).setDepth(50);
+  const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
+const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
+
+// Décalage vers le haut d'une demi-ligne pour compenser la ligne en plus
+const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2);
+
+if (statsContainer) statsContainer.destroy();
+statsContainer = this.add.container(centerX, midY, [
+  scoreLineText,
+  timeLineText,
+  bestLocalText,
+  globalLineText
+]).setDepth(50);
+
 
   if (supportButton) supportButton.destroy();
   supportButton = this.add.container(centerX, 0).setDepth(60);
@@ -367,6 +440,7 @@ function endGame(){
     mobileSupportZone = this.add.zone(centerX, bandCenterY, this.scale.width, bandH)
       .setOrigin(0.5).setDepth(999).setInteractive();
 
+    // Clique sur la bande
     mobileSupportZone.on('pointerup', (pointer) => {
       if (!mobileTapReady) return;
       mobileTapReady = false;
@@ -376,10 +450,33 @@ function endGame(){
       const w = window.open(url, '_blank', 'noopener');
       if (!w) window.location.href = url;
     });
+
+    // Clique direct sur le container (double filet de sécurité)
+    supportButton.on('pointerup', (pointer) => {
+      if (!mobileTapReady) return;
+      mobileTapReady = false;
+      pointer?.event?.stopPropagation?.();
+      pointer?.event?.preventDefault?.();
+      const url = 'https://paypal.me/eightenergyworld';
+      const w = window.open(url, '_blank', 'noopener');
+      if (!w) window.location.href = url;
+    });
+
   } else {
     // PC : inchangé
     supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
   }
+
+  /* ==== Firebase : enregistrement + mise à jour du meilleur score (tous) ==== */
+  // Enregistre le score (nom simple par défaut)
+  saveScore('Joueur', score);
+
+  // Met à jour la ligne globale dès qu’on a la valeur
+  getBestGlobalScore().then(bestGlobal => {
+    if (globalLineText) {
+      globalLineText.setText('MEILLEUR SCORE (TOUS) : ' + bestGlobal);
+    }
+  });
 }
 
 function resetGame(){
@@ -398,6 +495,7 @@ function resetGame(){
   if (scoreLineText){ scoreLineText.destroy(); scoreLineText=null; }
   if (timeLineText){ timeLineText.destroy(); timeLineText=null; }
   if (bestLocalText){ bestLocalText.destroy(); bestLocalText=null; }
+  if (globalLineText){ globalLineText.destroy(); globalLineText=null; }
 
   player.clearTint(); player.setPosition(200,400);
   obstacles.clear(true,true); bonuses.clear(true,true);
