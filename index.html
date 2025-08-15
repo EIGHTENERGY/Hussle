@@ -92,19 +92,12 @@ function openExternal(url){
     const w = window.open(url, '_blank', 'noopener');
     if (w && typeof w.focus === 'function') { w.focus(); return; }
   } catch(e) { /* ignore */ }
-
-  // Fallback 1 : lien <a> cliqué
-  try {
+  try { // Fallback 1 : lien <a> cliqué
     const a = document.createElement('a');
     a.href = url; a.target = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    return;
+    document.body.appendChild(a); a.click(); a.remove(); return;
   } catch(e){ /* ignore */ }
-
-  // Fallback 2 : même onglet (toujours autorisé)
-  window.location.href = url;
+  window.location.href = url; // Fallback 2 : même onglet
 }
 
 // ---------- Intro ----------
@@ -129,7 +122,7 @@ IntroScene.prototype.create = function(){
 
   const startButton = this.add.image(width/2, height*0.8, 'startBtn').setOrigin(0.5).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
   this.tweens.add({ targets:startButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
-  startButton.on('pointerup', () => { // pointerup : plus fiable sur iOS
+  startButton.on('pointerup', () => {
     if(this.introMusic?.isPlaying) this.introMusic.stop();
     this.cameras.main.fadeOut(500,0,0,0);
     this.time.delayedCall(500, () => this.scene.start('MainScene'));
@@ -160,6 +153,9 @@ MainScene.prototype.create = function(){
   const w = this.scale.width, h = this.scale.height;
   const cx = w/2, cy = h/2;
 
+  // S'assure que le haut-objet capte l'événement et qu'il ne "traverse" pas
+  this.input.setTopOnly(true);
+
   background = this.add.tileSprite(cx, cy, w, h*2, 'road').setDepth(0);
 
   // Positions identiques PC
@@ -179,8 +175,7 @@ MainScene.prototype.create = function(){
   finalScoreText = this.add.bitmapText(200,340,'vt323','',36).setOrigin(0.5).setDepth(50);
 
   restartButton = this.add.image(200,424,'retryBtn').setOrigin(0.5).setDepth(53).setVisible(false).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
-  restartButton.on('pointerup', () => resetGame.call(this)); // pointerup
-
+  restartButton.on('pointerup', () => resetGame.call(this));
   this.tweens.add({ targets:restartButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
 
   cursors = this.input.keyboard.createCursorKeys();
@@ -323,6 +318,7 @@ function endGame(){
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [scoreLineText, timeLineText, bestLocalText]).setDepth(50);
 
+  // --- Soutenir le jeu (ANCRÉ EN BAS)
   if (supportButton) supportButton.destroy();
   supportButton = this.add.container(centerX, 0).setDepth(60);
 
@@ -344,7 +340,7 @@ function endGame(){
   supportButton.add([heartLeft, supportText, heartRight]);
   supportButton.setSize(heartW + gap + textW + gap + heartW + 20, Math.max(textH, heartH) + 12);
 
-  // ✅ zone cliquable explicite + curseur main
+  // ✅ vraie zone cliquable rectangulaire centrée sur le container
   supportButton.setInteractive(
     new Phaser.Geom.Rectangle(-supportButton.width/2, -supportButton.height/2, supportButton.width, supportButton.height),
     Phaser.Geom.Rectangle.Contains
@@ -362,9 +358,22 @@ function endGame(){
   placeSupportBottom(this);
   this.time.delayedCall(0, () => placeSupportBottom(this));
 
-  // ✅ Clic fiable mobile
-  supportButton.on('pointerup', (pointer, x, y, event) => {
-    if (event && event.stopPropagation) event.stopPropagation();
+  // ✅ Bloque la propagation vers REJOUER + ouvre le lien
+  const stopChain = (pointer) => {
+    const ev = pointer && pointer.event;
+    if (ev) {
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+      if (typeof ev.stopPropagation === 'function') ev.stopPropagation();
+      if (typeof ev.preventDefault === 'function') ev.preventDefault();
+    }
+  };
+
+  supportButton.on('pointerdown', (pointer) => {
+    stopChain(pointer);
+  });
+
+  supportButton.on('pointerup', (pointer) => {
+    stopChain(pointer);
     openExternal('https://paypal.me/eightenergyworld');
   });
 }
