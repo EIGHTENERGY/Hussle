@@ -42,6 +42,9 @@ const STATS_LINE_SPACING = 0.55;
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
+// Marge visuelle pour ne pas couper le bouton "SOUTENIR" sur mobile
+const SAFE_BOTTOM_MOBILE = 96; // ~96px au-dessus du bord, ajuste si besoin
+
 // Résolution virtuelle fixe (comme PC)
 const spriteScale = 1;
 const hudScale = 1;
@@ -54,9 +57,9 @@ const GAME_H = 600;
 const config = {
   type: Phaser.WEBGL,
   scale: {
-    // PC: FIT + centré H/V (inchangé). Mobile: HEIGHT_CONTROLS_WIDTH => pleine hauteur.
+    // PC: FIT (inchangé). Mobile: pleine hauteur, largeur ajustée au ratio.
     mode: isMobile ? Phaser.Scale.HEIGHT_CONTROLS_WIDTH : Phaser.Scale.FIT,
-    autoCenter: isMobile ? Phaser.Scale.CENTER_BOTH : Phaser.Scale.CENTER_BOTH,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
     width: GAME_W,
     height: GAME_H
   },
@@ -166,7 +169,7 @@ MainScene.prototype.create = function(){
   cursors = this.input.keyboard.createCursorKeys();
   spawnObstacleEvent = this.time.addEvent({ delay:1200, callback:spawnObstacle, callbackScope:this, loop:true });
   spawnBonusEvent = this.time.addEvent({ delay:2000, callback:spawnBonus, callbackScope:this, loop:true });
-  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
+  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: 0' + timer); }, loop:true });
 
   this.physics.add.overlap(player, obstacles, hitObstacle, null, this);
   this.physics.add.overlap(player, bonuses, collectBonus, null, this);
@@ -263,12 +266,16 @@ function updateHearts(){
   }
 }
 
+/* ==== AJUSTEMENT : place le support plus haut sur MOBILE uniquement ==== */
 function placeSupportBottom(scene){
   if (!supportButton) return;
   const canvasH = scene.scale.height;
   const bounds = supportButton.getBounds();
   const halfH = bounds.height / 2;
-  const safeMargin = 40;
+
+  // PC : marge standard 40. Mobile : marge plus grande pour éviter la coupe.
+  const safeMargin = isMobile ? SAFE_BOTTOM_MOBILE : 40;
+
   supportButton.setY(canvasH - safeMargin - halfH);
 }
 
@@ -328,6 +335,7 @@ function endGame(){
 
   this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
 
+  // Place au bon endroit (mobile remonte grâce à SAFE_BOTTOM_MOBILE)
   placeSupportBottom(this);
   this.time.delayedCall(0, () => placeSupportBottom(this));
 
@@ -351,8 +359,12 @@ function endGame(){
       resetGame.call(this);
     });
 
-    const bandH = Math.max(120, supportButton.getBounds().height + 40);
-    mobileSupportZone = this.add.zone(centerX, this.scale.height - bandH/2, this.scale.width, bandH)
+    // Bande cliquable pour "SOUTENIR", placée au-dessus du bas avec la même marge
+    const supportBounds = supportButton.getBounds();
+    const bandH = Math.max(120, supportBounds.height + 40);
+    const bandCenterY = this.scale.height - SAFE_BOTTOM_MOBILE - (bandH/2);
+
+    mobileSupportZone = this.add.zone(centerX, bandCenterY, this.scale.width, bandH)
       .setOrigin(0.5).setDepth(999).setInteractive();
 
     mobileSupportZone.on('pointerup', (pointer) => {
