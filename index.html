@@ -22,7 +22,7 @@
       user-select: none;
       -webkit-text-size-adjust: 100%;
       overscroll-behavior: none; /* évite le “pull to refresh” sur mobile */
-      /* retiré pour garder le canvas centré
+      /* (retiré pour ne pas décentrer le canvas)
       padding-left: env(safe-area-inset-left);
       padding-right: env(safe-area-inset-right);
       padding-top: env(safe-area-inset-top);
@@ -86,20 +86,6 @@ const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
 
 function supportsWebP(){ const c=document.createElement('canvas'); return !!(c.getContext && c.getContext('2d')) ? c.toDataURL('image/webp').indexOf('data:image/webp')===0 : false; }
 
-/* ---- Ouverture externe fiable (mobile friendly) ---- */
-function openExternal(url){
-  try {
-    const w = window.open(url, '_blank', 'noopener');
-    if (w && typeof w.focus === 'function') { w.focus(); return; }
-  } catch(e) { /* ignore */ }
-  try { // Fallback 1 : lien <a> cliqué
-    const a = document.createElement('a');
-    a.href = url; a.target = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); a.remove(); return;
-  } catch(e){ /* ignore */ }
-  window.location.href = url; // Fallback 2 : même onglet
-}
-
 // ---------- Intro ----------
 function IntroScene(){ Phaser.Scene.call(this,{key:'IntroScene'}); }
 IntroScene.prototype = Object.create(Phaser.Scene.prototype); IntroScene.prototype.constructor = IntroScene;
@@ -122,11 +108,8 @@ IntroScene.prototype.create = function(){
 
   const startButton = this.add.image(width/2, height*0.8, 'startBtn').setOrigin(0.5).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
   this.tweens.add({ targets:startButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
-  startButton.on('pointerup', () => {
-    if(this.introMusic?.isPlaying) this.introMusic.stop();
-    this.cameras.main.fadeOut(500,0,0,0);
-    this.time.delayedCall(500, () => this.scene.start('MainScene'));
-  });
+  startButton.on('pointerdown', () => { if(this.introMusic?.isPlaying) this.introMusic.stop(); this.cameras.main.fadeOut(500,0,0,0);
+    this.time.delayedCall(500, () => this.scene.start('MainScene')); });
 };
 
 // ---------- Main ----------
@@ -153,9 +136,6 @@ MainScene.prototype.create = function(){
   const w = this.scale.width, h = this.scale.height;
   const cx = w/2, cy = h/2;
 
-  // S'assure que le haut-objet capte l'événement et qu'il ne "traverse" pas
-  this.input.setTopOnly(true);
-
   background = this.add.tileSprite(cx, cy, w, h*2, 'road').setDepth(0);
 
   // Positions identiques PC
@@ -175,7 +155,7 @@ MainScene.prototype.create = function(){
   finalScoreText = this.add.bitmapText(200,340,'vt323','',36).setOrigin(0.5).setDepth(50);
 
   restartButton = this.add.image(200,424,'retryBtn').setOrigin(0.5).setDepth(53).setVisible(false).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
-  restartButton.on('pointerup', () => resetGame.call(this));
+  restartButton.on('pointerdown', () => resetGame.call(this));
   this.tweens.add({ targets:restartButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
 
   cursors = this.input.keyboard.createCursorKeys();
@@ -224,13 +204,14 @@ MainScene.prototype.update = function(time, delta){
     level = nl; roadScrollSpeed = 2 + (level-1)*0.5;
     levelText.setText('NIVEAU: ' + level);
     showLevelMessage(this);
-    adjustSpawnRates.call(this);
+    adjustSpawnRates.call(this); // ✅ important : garder le scope scène
   }
   scoreText.setText('SCORE: ' + score);
 };
 
 function getLevelFromScore(s){ let l=1; for(let i=1;i<levelThresholds.length;i++){ if(s>=levelThresholds[i]) l=i+1; } return l; }
 function adjustSpawnRates(){
+  // ✅ recrée les events avec le bon scope (la scène)
   if (spawnBonusEvent) spawnBonusEvent.reset({
     delay: Math.max(500, 2500 - level*300),
     callback: spawnBonus,
@@ -261,7 +242,9 @@ function collectBonus(p,b){ b.destroy(); score+=50; this.bonusSound.play(); }
 function hitObstacle(p,o){ o.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if(lives<=0) endGame.call(this); }
 function animateHealthBar(){ healthHearts.children.each(h => { this.tweens.add({ targets:h, scaleX:h.scaleX*1.15, scaleY:h.scaleY*1.15, yoyo:true, duration:150, ease:'Power2' }); }); }
 
-/* Cœurs : PC fixe, mobile adaptatif */
+/* Cœurs :
+   - PC : position fixe (startX=345, spacing=19, sc=0.4, y=22)
+   - Mobile : adaptatif */
 function updateHearts(){
   healthHearts.clear(true,true);
   if (isMobile){
@@ -318,7 +301,6 @@ function endGame(){
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [scoreLineText, timeLineText, bestLocalText]).setDepth(50);
 
-  // --- Soutenir le jeu (ANCRÉ EN BAS)
   if (supportButton) supportButton.destroy();
   supportButton = this.add.container(centerX, 0).setDepth(60);
 
@@ -339,43 +321,13 @@ function endGame(){
 
   supportButton.add([heartLeft, supportText, heartRight]);
   supportButton.setSize(heartW + gap + textW + gap + heartW + 20, Math.max(textH, heartH) + 12);
+  supportButton.setInteractive({ useHandCursor:true });
 
-  // ✅ vraie zone cliquable rectangulaire centrée sur le container
-  supportButton.setInteractive(
-    new Phaser.Geom.Rectangle(-supportButton.width/2, -supportButton.height/2, supportButton.width, supportButton.height),
-    Phaser.Geom.Rectangle.Contains
-  );
-  supportButton.input.cursor = 'pointer';
+  this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
 
-  // Animation des cœurs
-  this.tweens.add({
-    targets:[heartLeft,heartRight],
-    scaleX:heartScale*1.15, scaleY:heartScale*1.15,
-    yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120
-  });
-
-  // Positionne en bas de l’écran (PC & mobile)
   placeSupportBottom(this);
   this.time.delayedCall(0, () => placeSupportBottom(this));
-
-  // ✅ Bloque la propagation vers REJOUER + ouvre le lien
-  const stopChain = (pointer) => {
-    const ev = pointer && pointer.event;
-    if (ev) {
-      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
-      if (typeof ev.stopPropagation === 'function') ev.stopPropagation();
-      if (typeof ev.preventDefault === 'function') ev.preventDefault();
-    }
-  };
-
-  supportButton.on('pointerdown', (pointer) => {
-    stopChain(pointer);
-  });
-
-  supportButton.on('pointerup', (pointer) => {
-    stopChain(pointer);
-    openExternal('https://paypal.me/eightenergyworld');
-  });
+  supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
 }
 
 function resetGame(){
