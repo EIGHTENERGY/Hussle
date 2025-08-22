@@ -350,7 +350,7 @@ MainScene.prototype.create = function(){
   finalScoreText = this.add.bitmapText(200,340,'vt323','',36).setOrigin(0.5).setDepth(50);
 
   /* IMPORTANT : Retry au-dessus de tout le reste */
-  restartButton = this.add.image(200,390,'retryBtn')
+  restartButton = this.add.image(200,424,'retryBtn')
     .setOrigin(0.5).setDepth(70).setVisible(false)
     .setInteractive({useHandCursor:true})
     .setScale(baseButtonScale*spriteScale);
@@ -488,7 +488,7 @@ function showGameOverUI() {
   this.tweens.add({ targets:gameOverImage, alpha:1, duration:500, ease:'Sine.easeOut' });
 
   /* Retry visible et au-dessus */
-  restartButton.setVisible(true).setDepth(70).setPosition(200,424);
+  restartButton.setVisible(true).setDepth(70).setPosition(200,456); <!-- CHANGÉ: 424 -> 456 -->
 
   if (score > bestLocalScore){ bestLocalScore = score; localStorage.setItem('bestScore', String(bestLocalScore)); }
 
