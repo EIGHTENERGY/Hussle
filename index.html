@@ -33,9 +33,74 @@
       max-width: 100vw;
       max-height: 100svh;
     }
+
+    /* === Interstitiel (overlay) === */
+    #supportInterstitial {
+      position: fixed; inset: 0;
+      background: #000;
+      display: none;
+      z-index: 999999; /* au-dessus du canvas */
+    }
+
+    /* Croix pixel art centrée en haut (PC + Mobile) — au-dessus du contenu */
+    #siClose {
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 32px; height: 32px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      touch-action: manipulation;
+      z-index: 2;
+    }
+    #siClose::before,
+    #siClose::after {
+      content: '';
+      position: absolute;
+      left: 50%; top: 0;
+      width: 4px; height: 100%;
+      background: #fff;
+      transform-origin: center;
+      image-rendering: pixelated;
+    }
+    #siClose::before { transform: translateX(-50%) rotate(45deg); }
+    #siClose::after  { transform: translateX(-50%) rotate(-45deg); }
+
+    /* Contenu — dessous la croix, ne la recouvre plus (z-index inférieur) */
+    #siCenter {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      text-align: center;
+      padding: 56px 16px 24px; /* espace sous la croix */
+      box-sizing: border-box;
+      z-index: 1;
+    }
+
+    #siSupport {
+      font-family: 'vt323', monospace; font-size: 28px;
+      color: #fff; background: transparent;
+      border: 2px solid #fff; padding: 8px 16px; cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    #siThanks {
+      color: #bbb; font-family: 'vt323', monospace; font-size: 18px; opacity: .85;
+    }
   </style>
 </head>
 <body>
+
+<!-- ===== Interstitiel : fond noir + croix pixel (centrée en haut) + “SOUTENIR LE JEU” ===== -->
+<div id="supportInterstitial" aria-hidden="true">
+  <button id="siClose" aria-label="Fermer"></button>
+  <div id="siCenter">
+    <button id="siSupport">SOUTENIR LE JEU</button>
+    <div id="siThanks">Merci pour le soutien ❤️</div>
+  </div>
+</div>
 
 <!-- Firebase (compat pour usage direct en <script>) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
@@ -106,8 +171,8 @@ const STATS_LINE_SPACING = 0.55;
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-// Marge visuelle pour ne pas couper le bouton "SOUTENIR" sur mobile
-const SAFE_BOTTOM_MOBILE = 96; // ~96px au-dessus du bord, ajuste si besoin
+// Marge visuelle (gardée pour compat, plus utilisée pour le support dans Game Over)
+const SAFE_BOTTOM_MOBILE = 96;
 
 // Résolution virtuelle fixe (comme PC)
 const spriteScale = 1;
@@ -142,15 +207,74 @@ let bestLocalScore = parseInt(localStorage.getItem('bestScore') || '0', 10);
 let statsContainer = null, scoreLineText = null, timeLineText = null, bestLocalText = null, globalLineText = null;
 let player, cursors, obstacles, bonuses, background;
 let score = 0, scoreText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
-let gameOverImage, finalScoreText, overlay, restartButton, supportButton;
+let gameOverImage, finalScoreText, overlay, restartButton;
+/* supportButton retiré de l'écran Game Over */
+let supportButton = null;
+
 let level = 1, lives = 3, gameOver = false;
 let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
 let spawnObstacleEvent, spawnBonusEvent, timer = 0, timerEvent, levelTween, levelTimer;
 const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
 
-/* ----- Pas de zones larges qui chevauchent ----- */
-let mobileRetryZone = null;     // (optionnel) petite zone de confort, au-dessus du bouton uniquement
-let mobileTapReady = false;     // pas utilisé au final
+/* ----- Mobile retry zone (optionnel) ----- */
+let mobileRetryZone = null;
+
+/* ====== Interstitiel : réglage de fréquence ======
+   Pour tester maintenant : SI_EVERY_N = 1 (à chaque fin de partie)
+   Plus tard : passe à 3 pour "toutes les 3 parties" */
+const SI_EVERY_N = 1;  // <<< règle ici (1 = chaque partie, 3 = toutes les 3 parties)
+let gamesPlayed = parseInt(localStorage.getItem('gamesPlayed') || '0', 10);
+function shouldShowSupportInterstitial() {
+  return SI_EVERY_N > 0 && ((gamesPlayed + 1) % SI_EVERY_N === 0); // +1 car on incrémente au endGame()
+}
+
+/* Interstitiel : ouverture / fermeture */
+function showSupportInterstitial(next) {
+  const el = document.getElementById('supportInterstitial');
+  const closeBtn = document.getElementById('siClose');
+  const supportBtn = document.getElementById('siSupport');
+  if (!el || !closeBtn || !supportBtn) { next?.(); return; }
+
+  let closed = false; // évite les doubles appels (click + touchend)
+
+  function openPayPal(e) {
+    e?.preventDefault?.();
+    const url = 'https://paypal.me/eightenergyworld';
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.warn('Impossible d’ouvrir PayPal dans un nouvel onglet', err);
+    }
+  }
+  function onClose(e) {
+    if (closed) return;
+    closed = true;
+    e?.preventDefault?.();
+    el.style.display = 'none';
+    // Nettoyage des handlers
+    closeBtn.removeEventListener('click', onClose);
+    closeBtn.removeEventListener('touchend', onClose);
+    supportBtn.removeEventListener('click', openPayPal);
+    supportBtn.removeEventListener('touchend', openPayPal);
+    // Ensuite, Game Over
+    next?.();
+  }
+
+  // Fermer via croix (PC & Mobile)
+  closeBtn.addEventListener('click', onClose);
+  closeBtn.addEventListener('touchend', onClose, {passive:true});
+
+  // Ouvrir PayPal (PC & Mobile)
+  supportBtn.addEventListener('click', openPayPal);
+  supportBtn.addEventListener('touchend', openPayPal, {passive:true});
+
+  // Fermer via Échap
+  function onKey(e){ if (e.key === 'Escape') onClose(e); }
+  document.addEventListener('keydown', onKey, { once:true });
+
+  // Afficher
+  el.style.display = 'block';
+}
 
 function supportsWebP(){
   const c=document.createElement('canvas');
@@ -249,6 +373,7 @@ MainScene.prototype.create = function(){
   gameOverSoundRef = this.sound.add('gameover',{ volume:0.7 });
   this.levelSound = this.sound.add('lvl',{ volume:0.5 });
 
+  // (sécurité) listeners existants
   this.scale.on('resize', () => placeSupportBottom(this));
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => placeSupportBottom(this));
@@ -277,7 +402,7 @@ MainScene.prototype.update = function(time, delta){
   const nl = getLevelFromScore(score);
   if (nl !== level){
     level = nl; roadScrollSpeed = 2 + (level-1)*0.5;
-    levelText.setText('NIVEAU: ' + level);
+    levelText.setText('NIVEAU:  ' + level);
     showLevelMessage(this);
     adjustSpawnRates.call(this);
   }
@@ -333,34 +458,19 @@ function updateHearts(){
   }
 }
 
-/* ==== Place “SOUTENIR” sans chevaucher et sous Retry ==== */
+/* ==== (héritage) placeSupportBottom : no-op sans supportButton ==== */
 function placeSupportBottom(scene){
   if (!supportButton) return;
   const canvasH = scene.scale.height;
   const bounds = supportButton.getBounds();
   const halfH = bounds.height / 2;
   const safeMargin = isMobile ? SAFE_BOTTOM_MOBILE : 40;
-  // Place près du bas…
   let y = canvasH - safeMargin - halfH;
-
-  // …mais s'assure d'être sous le bouton Retry avec une marge
-  if (restartButton && restartButton.visible) {
-    const retryBottom = restartButton.y + (restartButton.displayHeight/2);
-    const minY = retryBottom + halfH + 20;
-    if (y < minY) y = Math.min(canvasH - halfH, minY);
-  }
   supportButton.setY(y);
 }
 
-function endGame(){
-  if (gameOver) return; gameOver = true;
-  if (backMusic?.isPlaying) backMusic.stop();
-  if (gameOverSoundRef) gameOverSoundRef.play();
-  this.physics.pause(); player.setTint(0xff0000);
-  spawnObstacleEvent.remove(false); spawnBonusEvent.remove(false);
-  if (timerEvent) timerEvent.remove(false); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false);
-  levelDisplay.setText(''); overlay.setVisible(true);
-
+/* === Construction UI Game Over (SANS "SOUTENIR") === */
+function showGameOverUI() {
   const centerX = this.scale.width/2;
 
   gameOverImage.setVisible(true).setPosition(200,220);
@@ -377,65 +487,20 @@ function endGame(){
   scoreLineText = this.add.bitmapText(0, -step, 'vt323', 'SCORE : ' + score, statsSize).setOrigin(0.5);
   timeLineText  = this.add.bitmapText(0,  0,    'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
   bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
+
+  // Placeholder pour le global (sera mis à jour après lecture Firestore)
   globalLineText= this.add.bitmapText(0,  step*2,'vt323', 'MEILLEUR SCORE (TOUS) : ...', statsSize).setOrigin(0.5);
 
   const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
   const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
+
+  // Décalage vers le haut d'une demi-ligne pour compenser la ligne en plus
   const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2);
 
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [
     scoreLineText, timeLineText, bestLocalText, globalLineText
   ]).setDepth(50);
-
-  if (supportButton) supportButton.destroy();
-  supportButton = this.add.container(centerX, 0).setDepth(60); // sous Retry (70) mais au-dessus des stats (50)
-
-  const heartScale = 0.4, gap = 8;
-  const supportText = this.add.bitmapText(0,0,'vt323','SOUTENIR LE JEU',28).setOrigin(0.5);
-  const heartLeft  = this.add.image(0,0,'vie').setScale(heartScale).setOrigin(0.5);
-  const heartRight = this.add.image(0,0,'vie').setScale(heartScale).setOrigin(0.5);
-
-  const heartW = heartLeft.displayWidth, heartH = heartLeft.displayHeight;
-  const textW  = supportText.width,     textH  = supportText.height;
-
-  supportText.x = 0;
-  heartLeft.x   = -(textW/2 + gap + heartW/2);
-  heartRight.x  =  (textW/2 + gap + heartW/2);
-
-  const vOff = (textH/2) - (heartH/2);
-  heartLeft.y = vOff; heartRight.y = vOff;
-
-  supportButton.add([heartLeft, supportText, heartRight]);
-  supportButton.setSize(heartW + gap + textW + gap + heartW + 20, Math.max(textH, heartH) + 12);
-  supportButton.setInteractive({ useHandCursor:true });
-
-  this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
-
-  // Place au bon endroit (mobile remonte grâce à SAFE_BOTTOM_MOBILE) et sous Retry
-  placeSupportBottom(this);
-  this.time.delayedCall(0, () => placeSupportBottom(this));
-
-  if (isMobile) {
-    // (Optionnel) petite zone de confort *exactement* sur Retry
-    if (mobileRetryZone) mobileRetryZone.destroy();
-    const retryW = restartButton.displayWidth * 1.6;
-    const retryH = restartButton.displayHeight * 1.8;
-    mobileRetryZone = this.add.zone(restartButton.x, restartButton.y, retryW, retryH)
-      .setOrigin(0.5).setInteractive().setDepth(71); // juste au-dessus du bouton
-    mobileRetryZone.on('pointerup', () => resetGame.call(this));
-
-    // SOUTENIR : mobile = pointerup (ouvre dans un nouvel onglet si possible)
-    supportButton.on('pointerup', () => {
-      const url = 'https://paypal.me/eightenergyworld';
-      const w = window.open(url, '_blank', 'noopener');
-      if (!w) window.location.href = url;
-    });
-
-  } else {
-    // PC : pointerdown comme avant (aucune “bande” superposée)
-    supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
-  }
 
   /* ==== Firebase : enregistrement + meilleur score (tous) ==== */
   saveScore('Joueur', score);
@@ -446,6 +511,29 @@ function endGame(){
   });
 }
 
+/* === Fin de partie : interstitiel PUIS Game Over === */
+function endGame(){
+  if (gameOver) return; gameOver = true;
+  if (backMusic?.isPlaying) backMusic.stop();
+  if (gameOverSoundRef) gameOverSoundRef.play();
+  this.physics.pause(); player.setTint(0xff0000);
+  spawnObstacleEvent.remove(false); spawnBonusEvent.remove(false);
+  if (timerEvent) timerEvent.remove(false); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false);
+  levelDisplay.setText(''); overlay.setVisible(true);
+
+  // Compter la partie finie
+  gamesPlayed = (gamesPlayed|0) + 1;
+  localStorage.setItem('gamesPlayed', String(gamesPlayed));
+
+  // Affiche l’interstitiel selon la fréquence, puis Game Over
+  if (shouldShowSupportInterstitial()) {
+    // capture du this de la scène via l'arrow function
+    showSupportInterstitial(() => { showGameOverUI.call(this); });
+  } else {
+    showGameOverUI.call(this);
+  }
+}
+
 function resetGame(){
   score=0; lives=3; level=1; timer=0; gameOver=false;
   obstacleSpeed=120; bonusSpeed=200; roadScrollSpeed=2;
@@ -454,9 +542,8 @@ function resetGame(){
   gameOverImage.setVisible(false).setAlpha(0); overlay.setVisible(false); restartButton.setVisible(false);
 
   if (mobileRetryZone) { mobileRetryZone.destroy(); mobileRetryZone = null; }
-  mobileTapReady = false;
 
-  if (supportButton){ supportButton.destroy(); supportButton=null; }
+  if (supportButton){ supportButton.destroy(); supportButton=null; } // (sécurité)
   if (statsContainer){ statsContainer.destroy(); statsContainer=null; }
   if (scoreLineText){ scoreLineText.destroy(); scoreLineText=null; }
   if (timeLineText){ timeLineText.destroy(); timeLineText=null; }
