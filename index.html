@@ -452,7 +452,7 @@ function updateHearts(){
     let spacing = heartW*1.1; if (lives*spacing>available) spacing = available/Math.max(1,lives);
     const startX = healthLabel.x + healthLabel.width + 10;
     const midY = healthLabel.y + (healthLabel.height*0.5);
-    const offsetY = 6; // ⬇️ léger décalage vers le bas sur mobile
+    const offsetY = 4; // ⬇️ léger décalage vers le bas sur mobile
 
     for (let i=0;i<lives;i++){
       let h = this.add.image(startX + (i*spacing), midY + offsetY, 'vie')
