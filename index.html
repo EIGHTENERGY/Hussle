@@ -11,8 +11,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <style>
-    /* Hauteur réelle du viewport (évite les bandes iOS/Android) */
-    html, body { height: 100dvh; }
+    /* Hauteur réelle du viewport */
+    html, body {
+      height: 100dvh;   /* fallback */
+      height: 100svh;   /* mobile: colle bien en haut quand barres UI apparaissent/disparaissent */
+    }
     body {
       margin: 0; padding: 0; background: #000;
       font-family: 'vt323', cursive;
@@ -22,14 +25,13 @@
       user-select: none;
       -webkit-text-size-adjust: 100%;
       overscroll-behavior: none;
-      /* padding safe-area retiré pour ne pas décaler le canvas */
     }
     canvas {
       display: block;
-      margin: 0 auto;
+      margin: 0 auto;     /* centré horizontal uniquement */
       touch-action: none;
       max-width: 100vw;
-      max-height: 100dvh;
+      max-height: 100svh; /* suit la petite hauteur visible */
     }
   </style>
 </head>
@@ -121,7 +123,7 @@ const config = {
   scale: {
     // PC: FIT (inchangé). Mobile: pleine hauteur, largeur ajustée au ratio.
     mode: isMobile ? Phaser.Scale.HEIGHT_CONTROLS_WIDTH : Phaser.Scale.FIT,
-    // Mobile collé en haut; PC inchangé (centré)
+    // Mobile: collé en haut (centré H uniquement). PC: centré H+V comme avant.
     autoCenter: isMobile ? Phaser.Scale.CENTER_HORIZONTALLY : Phaser.Scale.CENTER_BOTH,
     width: GAME_W,
     height: GAME_H
@@ -412,17 +414,18 @@ function endGame(){
   placeSupportBottom(this);
   this.time.delayedCall(0, () => placeSupportBottom(this));
 
-  /* ----------- Spécifique MOBILE : deux zones + garde “fresh tap” ----------- */
+  /* ----------- Spécifique MOBILE : zones séparées et sans chevauchement ----------- */
   if (isMobile) {
     // prêt immédiat pour le 1er tap
     mobileTapReady = true;
 
+    // Le bouton graphique reste visible mais on passe par une zone dédiée (plus large)
     restartButton.disableInteractive();
 
     const retryW = restartButton.displayWidth * 1.6;
     const retryH = restartButton.displayHeight * 1.8;
     mobileRetryZone = this.add.zone(restartButton.x, restartButton.y, retryW, retryH)
-      .setOrigin(0.5).setDepth(999).setInteractive();
+      .setOrigin(0.5).setInteractive().setDepth(1200); // au-dessus de toute autre zone
 
     mobileRetryZone.on('pointerup', (pointer) => {
       if (!mobileTapReady) return;
@@ -432,13 +435,17 @@ function endGame(){
       resetGame.call(this);
     });
 
-    // Bande cliquable pour "SOUTENIR", placée au-dessus du bas avec la même marge
+    // Bande cliquable pour "SOUTENIR", dimensionnée pour ne PAS chevaucher Retry
     const supportBounds = supportButton.getBounds();
-    const bandH = Math.max(120, supportBounds.height + 40);
-    const bandCenterY = this.scale.height - SAFE_BOTTOM_MOBILE - (bandH/2);
+    const bandH = Math.max(80, supportBounds.height + 24); // plus fine qu'avant
+    const retryBottom = restartButton.y + (restartButton.displayHeight / 2);
+    // Top de la bande: sous Retry + marge, ou sinon à la position naturelle près du bas
+    const naturalTop = this.scale.height - SAFE_BOTTOM_MOBILE - bandH;
+    const bandTop = Math.max(retryBottom + 20, naturalTop);
+    const bandCenterY = bandTop + bandH / 2;
 
     mobileSupportZone = this.add.zone(centerX, bandCenterY, this.scale.width, bandH)
-      .setOrigin(0.5).setDepth(999).setInteractive();
+      .setOrigin(0.5).setInteractive().setDepth(1100); // sous la zone Retry
 
     // Clique sur la bande
     mobileSupportZone.on('pointerup', (pointer) => {
@@ -451,7 +458,7 @@ function endGame(){
       if (!w) window.location.href = url;
     });
 
-    // Clique direct sur le container (double filet de sécurité)
+    // Clique direct sur le container (filet de sécu)
     supportButton.on('pointerup', (pointer) => {
       if (!mobileTapReady) return;
       mobileTapReady = false;
