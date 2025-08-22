@@ -443,18 +443,29 @@ function animateHealthBar(){ healthHearts.children.each(h => { this.tweens.add({
 
 /* Cœurs :
    - PC : position fixe (startX=345, spacing=19, sc=0.4, y=22)
-   - Mobile : adaptatif */
+   - Mobile : adaptatif (légèrement plus bas pour l’alignement) */
 function updateHearts(){
   healthHearts.clear(true,true);
   if (isMobile){
     const sc = 0.6*spriteScale, heartW = 32*sc;
     const available = this.scale.width - (healthLabel.x + healthLabel.width + 20);
     let spacing = heartW*1.1; if (lives*spacing>available) spacing = available/Math.max(1,lives);
-    const startX = healthLabel.x + healthLabel.width + 10, midY = healthLabel.y + (healthLabel.height*0.5);
-    for (let i=0;i<lives;i++){ let h = this.add.image(startX + (i*spacing), midY, 'vie').setOrigin(0.5).setScale(sc).setDepth(11); healthHearts.add(h); }
+    const startX = healthLabel.x + healthLabel.width + 10;
+    const midY = healthLabel.y + (healthLabel.height*0.5);
+    const offsetY = 6; // ⬇️ léger décalage vers le bas sur mobile
+
+    for (let i=0;i<lives;i++){
+      let h = this.add.image(startX + (i*spacing), midY + offsetY, 'vie')
+        .setOrigin(0.5).setScale(sc).setDepth(11);
+      healthHearts.add(h);
+    }
   } else {
     const startX=345, spacing=19, sc=0.4, y=22;
-    for (let i=0;i<lives;i++){ let h = this.add.image(startX + (i*spacing), y, 'vie').setOrigin(0.5).setScale(sc).setDepth(11); healthHearts.add(h); }
+    for (let i=0;i<lives;i++){
+      let h = this.add.image(startX + (i*spacing), y, 'vie')
+        .setOrigin(0.5).setScale(sc).setDepth(11);
+      healthHearts.add(h);
+    }
   }
 }
 
