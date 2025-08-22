@@ -11,10 +11,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <style>
-    /* Hauteur réelle du viewport */
+    /* Plein écran collé en haut sur mobile (svh = small viewport height) */
     html, body {
-      height: 100dvh;   /* fallback */
-      height: 100svh;   /* mobile: colle bien en haut quand barres UI apparaissent/disparaissent */
+      height: 100svh;
+      height: 100dvh; /* fallback */
     }
     body {
       margin: 0; padding: 0; background: #000;
@@ -28,10 +28,10 @@
     }
     canvas {
       display: block;
-      margin: 0 auto;     /* centré horizontal uniquement */
+      margin: 0 auto;     /* centré horizontalement uniquement */
       touch-action: none;
       max-width: 100vw;
-      max-height: 100svh; /* suit la petite hauteur visible */
+      max-height: 100svh;
     }
   </style>
 </head>
@@ -121,9 +121,8 @@ const GAME_H = 600;
 const config = {
   type: Phaser.WEBGL,
   scale: {
-    // PC: FIT (inchangé). Mobile: pleine hauteur, largeur ajustée au ratio.
+    // PC: FIT (inchangé). Mobile: pleine hauteur, largeur ajustée au ratio, collé en haut.
     mode: isMobile ? Phaser.Scale.HEIGHT_CONTROLS_WIDTH : Phaser.Scale.FIT,
-    // Mobile: collé en haut (centré H uniquement). PC: centré H+V comme avant.
     autoCenter: isMobile ? Phaser.Scale.CENTER_HORIZONTALLY : Phaser.Scale.CENTER_BOTH,
     width: GAME_W,
     height: GAME_H
@@ -149,10 +148,9 @@ let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
 let spawnObstacleEvent, spawnBonusEvent, timer = 0, timerEvent, levelTween, levelTimer;
 const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
 
-/* ----- Zones et garde mobile ----- */
-let mobileRetryZone = null;
-let mobileSupportZone = null;
-let mobileTapReady = false;
+/* ----- Pas de zones larges qui chevauchent ----- */
+let mobileRetryZone = null;     // (optionnel) petite zone de confort, au-dessus du bouton uniquement
+let mobileTapReady = false;     // pas utilisé au final
 
 function supportsWebP(){
   const c=document.createElement('canvas');
@@ -227,8 +225,12 @@ MainScene.prototype.create = function(){
   gameOverImage = this.add.image(200,220,'gameOverImg').setOrigin(0.5).setDepth(50).setScale(gameOverImageScale*spriteScale).setAlpha(0).setVisible(false).disableInteractive();
   finalScoreText = this.add.bitmapText(200,340,'vt323','',36).setOrigin(0.5).setDepth(50);
 
-  restartButton = this.add.image(200,424,'retryBtn').setOrigin(0.5).setDepth(53).setVisible(false).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
-  restartButton.on('pointerdown', () => resetGame.call(this));
+  /* IMPORTANT : Retry au-dessus de tout le reste */
+  restartButton = this.add.image(200,424,'retryBtn')
+    .setOrigin(0.5).setDepth(70).setVisible(false)
+    .setInteractive({useHandCursor:true})
+    .setScale(baseButtonScale*spriteScale);
+  restartButton.on('pointerdown', () => resetGame.call(this)); // PC et mobile OK
   this.tweens.add({ targets:restartButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
 
   cursors = this.input.keyboard.createCursorKeys();
@@ -331,17 +333,23 @@ function updateHearts(){
   }
 }
 
-/* ==== AJUSTEMENT : place le support plus haut sur MOBILE uniquement ==== */
+/* ==== Place “SOUTENIR” sans chevaucher et sous Retry ==== */
 function placeSupportBottom(scene){
   if (!supportButton) return;
   const canvasH = scene.scale.height;
   const bounds = supportButton.getBounds();
   const halfH = bounds.height / 2;
-
-  // PC : marge standard 40. Mobile : marge plus grande pour éviter la coupe.
   const safeMargin = isMobile ? SAFE_BOTTOM_MOBILE : 40;
+  // Place près du bas…
+  let y = canvasH - safeMargin - halfH;
 
-  supportButton.setY(canvasH - safeMargin - halfH);
+  // …mais s'assure d'être sous le bouton Retry avec une marge
+  if (restartButton && restartButton.visible) {
+    const retryBottom = restartButton.y + (restartButton.displayHeight/2);
+    const minY = retryBottom + halfH + 20;
+    if (y < minY) y = Math.min(canvasH - halfH, minY);
+  }
+  supportButton.setY(y);
 }
 
 function endGame(){
@@ -358,7 +366,8 @@ function endGame(){
   gameOverImage.setVisible(true).setPosition(200,220);
   this.tweens.add({ targets:gameOverImage, alpha:1, duration:500, ease:'Sine.easeOut' });
 
-  restartButton.setVisible(true).setPosition(200,424);
+  /* Retry visible et au-dessus */
+  restartButton.setVisible(true).setDepth(70).setPosition(200,424);
 
   if (score > bestLocalScore){ bestLocalScore = score; localStorage.setItem('bestScore', String(bestLocalScore)); }
 
@@ -366,28 +375,21 @@ function endGame(){
   const step = Math.max(1, statsSize * STATS_LINE_SPACING);
 
   scoreLineText = this.add.bitmapText(0, -step, 'vt323', 'SCORE : ' + score, statsSize).setOrigin(0.5);
-  timeLineText  = this.add.bitmapText(0, 0,     'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
+  timeLineText  = this.add.bitmapText(0,  0,    'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
   bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
-
-  // Placeholder pour le global (sera mis à jour après lecture Firestore)
-  globalLineText = this.add.bitmapText(0, step * 2, 'vt323', 'MEILLEUR SCORE (TOUS) : ...', statsSize).setOrigin(0.5);
+  globalLineText= this.add.bitmapText(0,  step*2,'vt323', 'MEILLEUR SCORE (TOUS) : ...', statsSize).setOrigin(0.5);
 
   const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
   const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
-
-  // Décalage vers le haut d'une demi-ligne pour compenser la ligne en plus
   const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2);
 
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [
-    scoreLineText,
-    timeLineText,
-    bestLocalText,
-    globalLineText
+    scoreLineText, timeLineText, bestLocalText, globalLineText
   ]).setDepth(50);
 
   if (supportButton) supportButton.destroy();
-  supportButton = this.add.container(centerX, 0).setDepth(60);
+  supportButton = this.add.container(centerX, 0).setDepth(60); // sous Retry (70) mais au-dessus des stats (50)
 
   const heartScale = 0.4, gap = 8;
   const supportText = this.add.bitmapText(0,0,'vt323','SOUTENIR LE JEU',28).setOrigin(0.5);
@@ -410,75 +412,33 @@ function endGame(){
 
   this.tweens.add({ targets:[heartLeft,heartRight], scaleX:heartScale*1.15, scaleY:heartScale*1.15, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:700, delay:(t,k,v,i)=>i*120 });
 
-  // Place au bon endroit (mobile remonte grâce à SAFE_BOTTOM_MOBILE)
+  // Place au bon endroit (mobile remonte grâce à SAFE_BOTTOM_MOBILE) et sous Retry
   placeSupportBottom(this);
   this.time.delayedCall(0, () => placeSupportBottom(this));
 
-  /* ----------- Spécifique MOBILE : zones séparées et sans chevauchement ----------- */
   if (isMobile) {
-    // prêt immédiat pour le 1er tap
-    mobileTapReady = true;
-
-    // Le bouton graphique reste visible mais on passe par une zone dédiée (plus large)
-    restartButton.disableInteractive();
-
+    // (Optionnel) petite zone de confort *exactement* sur Retry
+    if (mobileRetryZone) mobileRetryZone.destroy();
     const retryW = restartButton.displayWidth * 1.6;
     const retryH = restartButton.displayHeight * 1.8;
     mobileRetryZone = this.add.zone(restartButton.x, restartButton.y, retryW, retryH)
-      .setOrigin(0.5).setInteractive().setDepth(1200); // au-dessus de toute autre zone
+      .setOrigin(0.5).setInteractive().setDepth(71); // juste au-dessus du bouton
+    mobileRetryZone.on('pointerup', () => resetGame.call(this));
 
-    mobileRetryZone.on('pointerup', (pointer) => {
-      if (!mobileTapReady) return;
-      mobileTapReady = false;
-      pointer?.event?.stopPropagation?.();
-      pointer?.event?.preventDefault?.();
-      resetGame.call(this);
-    });
-
-    // Bande cliquable pour "SOUTENIR", dimensionnée pour ne PAS chevaucher Retry
-    const supportBounds = supportButton.getBounds();
-    const bandH = Math.max(80, supportBounds.height + 24); // plus fine qu'avant
-    const retryBottom = restartButton.y + (restartButton.displayHeight / 2);
-    // Top de la bande: sous Retry + marge, ou sinon à la position naturelle près du bas
-    const naturalTop = this.scale.height - SAFE_BOTTOM_MOBILE - bandH;
-    const bandTop = Math.max(retryBottom + 20, naturalTop);
-    const bandCenterY = bandTop + bandH / 2;
-
-    mobileSupportZone = this.add.zone(centerX, bandCenterY, this.scale.width, bandH)
-      .setOrigin(0.5).setInteractive().setDepth(1100); // sous la zone Retry
-
-    // Clique sur la bande
-    mobileSupportZone.on('pointerup', (pointer) => {
-      if (!mobileTapReady) return;
-      mobileTapReady = false;
-      pointer?.event?.stopPropagation?.();
-      pointer?.event?.preventDefault?.();
-      const url = 'https://paypal.me/eightenergyworld';
-      const w = window.open(url, '_blank', 'noopener');
-      if (!w) window.location.href = url;
-    });
-
-    // Clique direct sur le container (filet de sécu)
-    supportButton.on('pointerup', (pointer) => {
-      if (!mobileTapReady) return;
-      mobileTapReady = false;
-      pointer?.event?.stopPropagation?.();
-      pointer?.event?.preventDefault?.();
+    // SOUTENIR : mobile = pointerup (ouvre dans un nouvel onglet si possible)
+    supportButton.on('pointerup', () => {
       const url = 'https://paypal.me/eightenergyworld';
       const w = window.open(url, '_blank', 'noopener');
       if (!w) window.location.href = url;
     });
 
   } else {
-    // PC : inchangé
+    // PC : pointerdown comme avant (aucune “bande” superposée)
     supportButton.on('pointerdown', () => window.open('https://paypal.me/eightenergyworld','_blank'));
   }
 
-  /* ==== Firebase : enregistrement + mise à jour du meilleur score (tous) ==== */
-  // Enregistre le score (nom simple par défaut)
+  /* ==== Firebase : enregistrement + meilleur score (tous) ==== */
   saveScore('Joueur', score);
-
-  // Met à jour la ligne globale dès qu’on a la valeur
   getBestGlobalScore().then(bestGlobal => {
     if (globalLineText) {
       globalLineText.setText('MEILLEUR SCORE (TOUS) : ' + bestGlobal);
@@ -494,7 +454,6 @@ function resetGame(){
   gameOverImage.setVisible(false).setAlpha(0); overlay.setVisible(false); restartButton.setVisible(false);
 
   if (mobileRetryZone) { mobileRetryZone.destroy(); mobileRetryZone = null; }
-  if (mobileSupportZone) { mobileSupportZone.destroy(); mobileSupportZone = null; }
   mobileTapReady = false;
 
   if (supportButton){ supportButton.destroy(); supportButton=null; }
