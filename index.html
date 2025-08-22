@@ -121,7 +121,8 @@ const config = {
   scale: {
     // PC: FIT (inchangé). Mobile: pleine hauteur, largeur ajustée au ratio.
     mode: isMobile ? Phaser.Scale.HEIGHT_CONTROLS_WIDTH : Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    // Mobile collé en haut; PC inchangé (centré)
+    autoCenter: isMobile ? Phaser.Scale.CENTER_HORIZONTALLY : Phaser.Scale.CENTER_BOTH,
     width: GAME_W,
     height: GAME_H
   },
@@ -370,19 +371,18 @@ function endGame(){
   globalLineText = this.add.bitmapText(0, step * 2, 'vt323', 'MEILLEUR SCORE (TOUS) : ...', statsSize).setOrigin(0.5);
 
   const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
-const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
+  const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
 
-// Décalage vers le haut d'une demi-ligne pour compenser la ligne en plus
-const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2);
+  // Décalage vers le haut d'une demi-ligne pour compenser la ligne en plus
+  const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2);
 
-if (statsContainer) statsContainer.destroy();
-statsContainer = this.add.container(centerX, midY, [
-  scoreLineText,
-  timeLineText,
-  bestLocalText,
-  globalLineText
-]).setDepth(50);
-
+  if (statsContainer) statsContainer.destroy();
+  statsContainer = this.add.container(centerX, midY, [
+    scoreLineText,
+    timeLineText,
+    bestLocalText,
+    globalLineText
+  ]).setDepth(50);
 
   if (supportButton) supportButton.destroy();
   supportButton = this.add.container(centerX, 0).setDepth(60);
@@ -414,9 +414,8 @@ statsContainer = this.add.container(centerX, midY, [
 
   /* ----------- Spécifique MOBILE : deux zones + garde “fresh tap” ----------- */
   if (isMobile) {
-    mobileTapReady = false;
-    /* CHANGEMENT ICI : armer sur pointerdown au lieu de pointerup */
-    this.input.once('pointerdown', () => { mobileTapReady = true; });
+    // prêt immédiat pour le 1er tap
+    mobileTapReady = true;
 
     restartButton.disableInteractive();
 
