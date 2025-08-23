@@ -116,8 +116,8 @@
 <!-- ======================================================
      FIREBASE (scores globaux)
      - firebaseConfig : tes identifiants projet
-     - saveScore(player, score) : enregistre la partie
-     - getBestGlobalScore() : lit le meilleur score global
+     - saveScore(player, score) : enregistre la partie (Number)
+     - getBestGlobalScore() : lit le meilleur score global (réseau)
      - Si Firebase ne s'initialise pas, le jeu continue
      ====================================================== -->
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
@@ -147,13 +147,13 @@
     }
   })();
 
-  // Sauvegarder un score (non bloquant si Firebase KO)
+  // Sauvegarder un score (force types) — non bloquant si Firebase KO
   async function saveScore(player, score) {
     if (!firebaseReady || !db) return;
     try {
       await db.collection("scores").add({
-        player: player,
-        score: score,
+        player: String(player || 'Joueur'),
+        score: Number(score) || 0,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     } catch (e) {
@@ -161,16 +161,16 @@
     }
   }
 
-  // Lire le meilleur score global (retourne 0 si indisponible)
+  // Lire le meilleur score global (retourne 0 si indisponible) — côté serveur
   async function getBestGlobalScore() {
     if (!firebaseReady || !db) return 0;
     try {
       const snap = await db.collection("scores")
         .orderBy("score", "desc")
         .limit(1)
-        .get();
+        .get({ source: "server" });
       if (!snap.empty) {
-        return snap.docs[0].data().score || 0;
+        return Number(snap.docs[0].data().score) || 0;
       }
       return 0;
     } catch (e) {
@@ -627,12 +627,13 @@ function showGameOverUI() {
   ]).setDepth(50);
 
   /* ==== Firebase : enregistrement + meilleur score (tous) ==== */
-  saveScore('Joueur', score);
-  getBestGlobalScore().then(bestGlobal => {
+  (async () => {
+    await saveScore('Joueur', score); // on attend l'écriture
+    const bestGlobal = await getBestGlobalScore(); // puis on lit le record global côté serveur
     if (globalLineText) {
       globalLineText.setText('MEILLEUR SCORE (TOUS) : ' + bestGlobal);
     }
-  });
+  })();
 }
 
 // ===================== FIN DE PARTIE =====================
