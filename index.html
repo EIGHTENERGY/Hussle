@@ -11,7 +11,12 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <style>
-    /* Plein écran collé en haut sur mobile (svh = small viewport height) */
+    /* ================================
+       LAYOUT DE PAGE (plein écran)
+       - Le canvas prend toute la hauteur utile (svh/dvh)
+       - Le body est "clean" (pas de scroll ni zoom)
+       - Le canvas est centré horizontalement
+       ================================ */
     html, body {
       height: 100svh;
       height: 100dvh; /* fallback */
@@ -34,7 +39,13 @@
       max-height: 100svh;
     }
 
-    /* === Interstitiel (overlay) === */
+    /* =========================================
+       INTERSTITIEL "SOUTENIR LE JEU" (overlay)
+       - #supportInterstitial : fond noir plein écran, masqué par défaut
+       - #siClose : croix pixel centrée en haut (par-dessus le contenu)
+       - #siCenter : zone centrale (bouton + message)
+       - Pour changer le style du bouton : #siSupport
+       ========================================= */
     #supportInterstitial {
       position: fixed; inset: 0;
       background: #000;
@@ -45,7 +56,7 @@
     /* Croix pixel art centrée en haut (PC + Mobile) — au-dessus du contenu */
     #siClose {
       position: absolute;
-      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      top: calc(env(safe-area-inset-top, 0px) + 10px); /* ↕ marge haute, gère la notch */
       left: 50%;
       transform: translateX(-50%);
       width: 32px; height: 32px;
@@ -80,7 +91,7 @@
     }
 
     #siSupport {
-      font-family: 'vt323', monospace; font-size: 28px;
+      font-family: 'vt323', monospace; font-size: 28px;   /* ↕ taille du bouton */
       color: #fff; background: transparent;
       border: 2px solid #fff; padding: 8px 16px; cursor: pointer;
       touch-action: manipulation;
@@ -102,7 +113,13 @@
   </div>
 </div>
 
-<!-- Firebase (compat pour usage direct en <script>) -->
+<!-- ======================================================
+     FIREBASE (scores globaux)
+     - firebaseConfig : tes identifiants projet
+     - saveScore(player, score) : enregistre la partie
+     - getBestGlobalScore() : lit le meilleur score global
+     - Si Firebase ne s'initialise pas, le jeu continue
+     ====================================================== -->
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
 <script>
@@ -163,30 +180,39 @@
   }
 </script>
 
+<!-- =========================================
+     PHASER 3 (moteur du jeu)
+     ========================================= -->
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
 <script>
-// ======= Réglage unique de l'espacement des lignes =======
+// ===================== PARAMÈTRES GLOBAUX UI =====================
+// STATS_LINE_SPACING : interligne du bloc "Score / Temps / Meilleur"
 const STATS_LINE_SPACING = 0.55;
-// =========================================================
 
+// Détection très simple du mobile (pour certains placements UI)
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-// Marge visuelle (gardée pour compat, plus utilisée pour le support dans Game Over)
+// Marge visuelle pour éléments proches du bas (si besoin)
 const SAFE_BOTTOM_MOBILE = 96;
 
-// Résolution virtuelle fixe (comme PC)
+// ===================== RÉGLAGES D'ÉCHELLE & RÉSOLUTION =====================
+// - spriteScale / hudScale : échelles globales (sprites / HUD)
+// - baseButtonScale : taille de base des boutons image (Start/Retry)
 const spriteScale = 1;
 const hudScale = 1;
 const baseButtonScale = 0.25;
 const gameOverImageScale = 0.3;
 
+// Résolution logique du jeu (canvas interne)
 const GAME_W = 400;
 const GAME_H = 600;
 
+// ===================== CONFIG PHASER (centrage & scale) =====================
+// - mode: sur mobile on colle en haut et on contrôle la largeur par la hauteur
+// - autoCenter: mobile = centré horizontalement, PC = centré horizontalement+verticalement
 const config = {
   type: Phaser.WEBGL,
   scale: {
-    // PC: FIT (inchangé). Mobile: pleine hauteur, largeur ajustée au ratio, collé en haut.
     mode: isMobile ? Phaser.Scale.HEIGHT_CONTROLS_WIDTH : Phaser.Scale.FIT,
     autoCenter: isMobile ? Phaser.Scale.CENTER_HORIZONTALLY : Phaser.Scale.CENTER_BOTH,
     width: GAME_W,
@@ -197,13 +223,14 @@ const config = {
   scene: [IntroScene, MainScene]
 };
 
+// ===================== VARIABLES RUNTIME =====================
 let game = new Phaser.Game(config);
 let musicStarted = false, backMusic = null, gameOverSoundRef = null;
 
-// Best score
+// Score local sauvegardé en localStorage
 let bestLocalScore = parseInt(localStorage.getItem('bestScore') || '0', 10);
 
-// Refs
+// Références d’objets (textes HUD, conteneur stats, etc.)
 let statsContainer = null, scoreLineText = null, timeLineText = null, bestLocalText = null, globalLineText = null;
 let player, cursors, obstacles, bonuses, background;
 let score = 0, scoreText, levelText, levelDisplay, healthLabel, healthHearts, timerText;
@@ -211,24 +238,32 @@ let gameOverImage, finalScoreText, overlay, restartButton;
 /* supportButton retiré de l'écran Game Over */
 let supportButton = null;
 
+// Progression & difficulté
 let level = 1, lives = 3, gameOver = false;
 let obstacleSpeed = 120, bonusSpeed = 200, roadScrollSpeed = 2;
 let spawnObstacleEvent, spawnBonusEvent, timer = 0, timerEvent, levelTween, levelTimer;
+
+// ===================== TABLEAU DES NIVEAUX =====================
+// - Ajuste les paliers de score qui déclenchent les niveaux
 const levelThresholds = [0, 250, 600, 1100, 1750, 2450, 3400, 4500];
 
 /* ----- Mobile retry zone (optionnel) ----- */
 let mobileRetryZone = null;
 
-/* ====== Interstitiel : réglage de fréquence ======
-   Pour tester maintenant : SI_EVERY_N = 1 (à chaque fin de partie)
-   Plus tard : passe à 3 pour "toutes les 3 parties" */
-const SI_EVERY_N = 1;  // <<< règle ici (1 = chaque partie, 3 = toutes les 3 parties)
+// ===================== INTERSTITIEL : FRÉQUENCE D’AFFICHAGE =====================
+// - SI_EVERY_N : afficher la fenêtre "SOUTENIR LE JEU" toutes les N parties
+//   1 = à chaque fin de partie ; 3 = toutes les 3 parties, etc.
+const SI_EVERY_N = 3;  // <<< règle ici (1 = chaque partie, 3 = toutes les 3 parties)
 let gamesPlayed = parseInt(localStorage.getItem('gamesPlayed') || '0', 10);
 function shouldShowSupportInterstitial() {
   return SI_EVERY_N > 0 && ((gamesPlayed + 1) % SI_EVERY_N === 0); // +1 car on incrémente au endGame()
 }
 
-/* Interstitiel : ouverture / fermeture */
+/* =========================================================
+   Interstitiel : ouverture / fermeture
+   - showSupportInterstitial(next) : affiche l’overlay puis appelle next()
+   - Bouton "SOUTENIR" ouvre PayPal dans un nouvel onglet
+   ========================================================= */
 function showSupportInterstitial(next) {
   const el = document.getElementById('supportInterstitial');
   const closeBtn = document.getElementById('siClose');
@@ -276,43 +311,55 @@ function showSupportInterstitial(next) {
   el.style.display = 'block';
 }
 
+// ===================== DÉTECTION WEBP (assets) =====================
 function supportsWebP(){
   const c=document.createElement('canvas');
   return !!(c.getContext && c.getContext('2d')) ? c.toDataURL('image/webp').indexOf('data:image/webp')===0 : false;
 }
 
-// ---------- Intro ----------
+// ===================== SCÈNE INTRO (écran titre + Start) =====================
 function IntroScene(){ Phaser.Scene.call(this,{key:'IntroScene'}); }
 IntroScene.prototype = Object.create(Phaser.Scene.prototype); IntroScene.prototype.constructor = IntroScene;
 IntroScene.prototype.preload = function(){
   this.load.image('introWebP','image/intro.webp');
   this.load.image('introJPG','image/intro.jpg');
   this.load.image('startBtn', supportsWebP() ? 'image/start.webp' : 'image/start.png');
-  this.load.audio('back','son/back.mp3');
-  this.load.audio('back_intro','son/back_intro.mp3');
+  this.load.audio('back','son/back.mp3');          // musique in-game
+  this.load.audio('back_intro','son/back_intro.mp3'); // musique intro
 };
 IntroScene.prototype.create = function(){
   const { width, height } = this.scale;
   const key = supportsWebP() ? 'introWebP' : 'introJPG';
   this.add.image(width/2, height/2, key).setDisplaySize(width, height);
 
+  // Musique d'intro (loop)
   this.introMusic = this.sound.add('back_intro', { loop:true, volume:0.2 }); this.introMusic.play();
+
+  // Déverrouillage audio sur 1er input (mobile)
   const unlock = () => { this.sound.unlock(); if(!this.introMusic.isPlaying) this.introMusic.play();
     window.removeEventListener('pointerdown', unlock); window.removeEventListener('touchstart', unlock); };
   window.addEventListener('pointerdown', unlock); window.addEventListener('touchstart', unlock);
 
-  const startButton = this.add.image(width/2, height*0.8, 'startBtn').setOrigin(0.5).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
+  // Bouton "START" (position verticale via height*0.8)
+  const startButton = this.add.image(width/2, height*0.8, 'startBtn')
+    .setOrigin(0.5).setInteractive({useHandCursor:true}).setScale(baseButtonScale*spriteScale);
+  // Petite animation pulsée du bouton
   this.tweens.add({ targets:startButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
-  startButton.on('pointerdown', () => { if(this.introMusic?.isPlaying) this.introMusic.stop(); this.cameras.main.fadeOut(500,0,0,0);
-    this.time.delayedCall(500, () => this.scene.start('MainScene')); });
+
+  startButton.on('pointerdown', () => {
+    if(this.introMusic?.isPlaying) this.introMusic.stop();
+    this.cameras.main.fadeOut(500,0,0,0);
+    this.time.delayedCall(500, () => this.scene.start('MainScene'));
+  });
 };
 
-// ---------- Main ----------
+// ===================== SCÈNE MAIN (jeu) =====================
 function MainScene(){ Phaser.Scene.call(this,{key:'MainScene'}); }
 MainScene.prototype = Object.create(Phaser.Scene.prototype); MainScene.prototype.constructor = MainScene;
 
 MainScene.prototype.preload = function(){
   const isRetina = window.devicePixelRatio > 1, useWebP = supportsWebP(), ext = useWebP ? 'webp' : 'png';
+  // Assets (suffixe @2x si retina)
   this.load.image('player',`image/player${isRetina?'@2x':''}.${ext}`);
   this.load.image('obstacle',`image/obstacle${isRetina?'@2x':''}.${ext}`);
   this.load.image('bonus',`image/bonus${isRetina?'@2x':''}.${ext}`);
@@ -320,10 +367,14 @@ MainScene.prototype.preload = function(){
   this.load.image('vie',`image/vie${isRetina?'@2x':''}.${ext}`);
   this.load.image('retryBtn', supportsWebP() ? 'image/retry.webp' : 'image/retry.png');
   this.load.image('gameOverImg', supportsWebP() ? 'image/game_over.webp' : 'image/game_over.png');
+
+  // Sons (volumes ajustés au create())
   this.load.audio('bonus','son/bonus.wav');
   this.load.audio('obstacle','son/obstacle.wav');
   this.load.audio('gameover','son/gameover.mp3');
   this.load.audio('lvl','son/lvl.wav');
+
+  // Police bitmap
   this.load.bitmapFont('vt323','fonts/vt323_0.png','fonts/vt323.fnt');
 };
 
@@ -331,49 +382,72 @@ MainScene.prototype.create = function(){
   const w = this.scale.width, h = this.scale.height;
   const cx = w/2, cy = h/2;
 
+  // ==== FOND DÉFILANT ====
   background = this.add.tileSprite(cx, cy, w, h*2, 'road').setDepth(0);
 
-  // Positions identiques PC
-  player = this.physics.add.sprite(200,400,'player').setDisplaySize(40*spriteScale,40*spriteScale).setCollideWorldBounds(true);
-  obstacles = this.physics.add.group(); bonuses = this.physics.add.group();
+  // ==== JOUEUR & GROUPES ====
+  player = this.physics.add.sprite(200,400,'player')
+    .setDisplaySize(40*spriteScale,40*spriteScale) // ↕ taille du sprite joueur
+    .setCollideWorldBounds(true);
+  obstacles = this.physics.add.group();
+  bonuses   = this.physics.add.group();
 
-  scoreText = this.add.bitmapText(10,5,'vt323','SCORE: 0',28*hudScale).setDepth(11);
-  timerText = this.add.bitmapText(200,5,'vt323','TEMPS: 0',28*hudScale).setOrigin(0.5,0).setDepth(11);
-  levelText = this.add.bitmapText(200,50,'vt323','NIVEAU: 1',28*hudScale).setOrigin(0.5).setDepth(11);
-  healthLabel = this.add.bitmapText(300,5,'vt323','VIE:',28*hudScale).setDepth(11);
+  // ==== HUD TOP (textes) ====
+  scoreText   = this.add.bitmapText(10,5,'vt323','SCORE: 0',28*hudScale).setDepth(11);          // position/size score
+  timerText   = this.add.bitmapText(200,5,'vt323','TEMPS: 0',28*hudScale).setOrigin(0.5,0).setDepth(11); // position/size temps
+  levelText   = this.add.bitmapText(200,50,'vt323','NIVEAU: 1',28*hudScale).setOrigin(0.5).setDepth(11); // niveau affiché
+  healthLabel = this.add.bitmapText(300,5,'vt323','VIE:',28*hudScale).setDepth(11);              // libellé "VIE:"
 
-  healthHearts = this.add.group(); updateHearts.call(this);
+  // ==== Cœurs de vie (voir updateHearts() pour placement mobile/PC) ====
+  healthHearts = this.add.group();
+  updateHearts.call(this);
+
+  // ==== Affichage court du niveau atteint (au centre) ====
   levelDisplay = this.add.bitmapText(200,300,'vt323','',48).setOrigin(0.5).setDepth(20);
+
+  // ==== Overlay noir (utilisé à la fin) ====
   overlay = this.add.rectangle(200,300,400,600,0x000000,0.0).setDepth(49).setVisible(false);
 
-  gameOverImage = this.add.image(200,220,'gameOverImg').setOrigin(0.5).setDepth(50).setScale(gameOverImageScale*spriteScale).setAlpha(0).setVisible(false).disableInteractive();
+  // ==== GAME OVER (image + score final + bouton Retry) ====
+  gameOverImage = this.add.image(200,220,'gameOverImg')
+    .setOrigin(0.5).setDepth(50).setScale(gameOverImageScale*spriteScale).setAlpha(0).setVisible(false).disableInteractive();
   finalScoreText = this.add.bitmapText(200,340,'vt323','',36).setOrigin(0.5).setDepth(50);
 
-  /* IMPORTANT : Retry au-dessus de tout le reste */
+  // Bouton RESTART (position Y définie dans showGameOverUI())
   restartButton = this.add.image(200,424,'retryBtn')
     .setOrigin(0.5).setDepth(70).setVisible(false)
     .setInteractive({useHandCursor:true})
     .setScale(baseButtonScale*spriteScale);
-  restartButton.on('pointerdown', () => resetGame.call(this)); // PC et mobile OK
+  restartButton.on('pointerdown', () => resetGame.call(this));
   this.tweens.add({ targets:restartButton, scale:baseButtonScale*spriteScale*1.2, yoyo:true, repeat:-1, ease:'Sine.easeInOut', duration:600 });
 
+  // ==== INPUTS & TIMERS ====
   cursors = this.input.keyboard.createCursorKeys();
   spawnObstacleEvent = this.time.addEvent({ delay:1200, callback:spawnObstacle, callbackScope:this, loop:true });
-  spawnBonusEvent = this.time.addEvent({ delay:2000, callback:spawnBonus, callbackScope:this, loop:true });
-  timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
+  spawnBonusEvent    = this.time.addEvent({ delay:2000, callback:spawnBonus,  callbackScope:this, loop:true });
+  timerEvent         = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
 
+  // ==== COLLISIONS ====
   this.physics.add.overlap(player, obstacles, hitObstacle, null, this);
-  this.physics.add.overlap(player, bonuses, collectBonus, null, this);
+  this.physics.add.overlap(player, bonuses,   collectBonus, null, this);
 
-  this.input.on('pointermove', p => { if(!gameOver){ player.x = p.x; player.y = p.y - 50; } });
+  // ==== CONTRÔLE AU DOIGT / SOURIS (déplacement direct) ====
+  this.input.on('pointermove', p => {
+    if(!gameOver){ player.x = p.x; player.y = p.y - 50; }
+  });
 
-  if (!musicStarted){ backMusic = this.sound.add('back',{ loop:true, volume:0.15 }); backMusic.play(); musicStarted = true; }
-  this.bonusSound = this.sound.add('bonus',{ volume:0.15 });
-  this.obstacleSound = this.sound.add('obstacle',{ volume:0.2 });
-  gameOverSoundRef = this.sound.add('gameover',{ volume:0.7 });
-  this.levelSound = this.sound.add('lvl',{ volume:0.5 });
+  // ==== SONS ====
+  if (!musicStarted){
+    backMusic = this.sound.add('back',{ loop:true, volume:0.15 }); // volume musique in-game
+    backMusic.play();
+    musicStarted = true;
+  }
+  this.bonusSound     = this.sound.add('bonus',{ volume:0.15 });
+  this.obstacleSound  = this.sound.add('obstacle',{ volume:0.2 });
+  gameOverSoundRef    = this.sound.add('gameover',{ volume:0.7 });
+  this.levelSound     = this.sound.add('lvl',{ volume:0.5 });
 
-  // (sécurité) listeners existants
+  // ==== SÉCURITÉ / LISTENERS D'AJUSTEMENT ====
   this.scale.on('resize', () => placeSupportBottom(this));
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => placeSupportBottom(this));
@@ -385,65 +459,95 @@ MainScene.prototype.create = function(){
 
 MainScene.prototype.update = function(time, delta){
   if (gameOver) return;
+
+  // Vitesse de défilement de la route (liée au niveau : voir roadScrollSpeed)
   background.tilePositionY -= roadScrollSpeed * (delta/16.66);
 
-  const move = 250;
-  if (cursors.left.isDown) player.x -= move*(delta/1000); else if (cursors.right.isDown) player.x += move*(delta/1000);
-  if (cursors.up.isDown) player.y -= move*(delta/1000); else if (cursors.down.isDown) player.y += move*(delta/1000);
+  // Contrôles clavier fléchés
+  const move = 250; // vitesse de déplacement (px/s)
+  if (cursors.left.isDown)  player.x -= move*(delta/1000);
+  else if (cursors.right.isDown) player.x += move*(delta/1000);
+  if (cursors.up.isDown)    player.y -= move*(delta/1000);
+  else if (cursors.down.isDown)  player.y += move*(delta/1000);
 
+  // Mouvement des obstacles/bonus
   obstacles.children.iterate(o => { o.y += obstacleSpeed*(delta/1000); });
   bonuses.children.iterate(b => { b.y += bonusSpeed*(delta/1000); });
 
+  // Nettoyage hors écran
   obstacles.getChildren().forEach(o => { if (o.y > 560) o.destroy(); });
   bonuses.getChildren().forEach(b => { if (b.y > 560) b.destroy(); });
 
-  obstacleSpeed = 120 + level*15; bonusSpeed = 200 + level*10;
+  // Échelle des vitesses par niveau
+  obstacleSpeed   = 120 + level*15;
+  bonusSpeed      = 200 + level*10;
 
+  // Changement de niveau selon score (voir levelThresholds)
   const nl = getLevelFromScore(score);
   if (nl !== level){
-    level = nl; roadScrollSpeed = 2 + (level-1)*0.5;
+    level = nl;
+    roadScrollSpeed = 2 + (level-1)*0.5;   // vitesse de défilement de la route par niveau
     levelText.setText('NIVEAU:  ' + level);
     showLevelMessage(this);
     adjustSpawnRates.call(this);
   }
+
+  // Mise à jour score HUD
   scoreText.setText('SCORE: ' + score);
 };
 
+// ===================== LOGIQUE NIVEAUX & SPAWNS =====================
 function getLevelFromScore(s){ let l=1; for(let i=1;i<levelThresholds.length;i++){ if(s>=levelThresholds[i]) l=i+1; } return l; }
 function adjustSpawnRates(){
+  // Fréquence d’apparition des bonus/obstacles (diminue avec le niveau)
   if (spawnBonusEvent) spawnBonusEvent.reset({
-    delay: Math.max(500, 2500 - level*300),
+    delay: Math.max(500, 2500 - level*300), // ⟵ ajuste ici la cadence des bonus
     callback: spawnBonus,
     callbackScope: this,
     loop: true
   });
   if (spawnObstacleEvent) spawnObstacleEvent.reset({
-    delay: Math.max(400, 1200 - level*100),
+    delay: Math.max(400, 1200 - level*100), // ⟵ ajuste ici la cadence des obstacles
     callback: spawnObstacle,
     callbackScope: this,
     loop: true
   });
 }
-function showLevelMessage(scene){ if(scene.levelSound) scene.levelSound.play(); levelDisplay.setText('NIVEAU : ' + level);
+function showLevelMessage(scene){
+  if(scene.levelSound) scene.levelSound.play();
+  levelDisplay.setText('NIVEAU : ' + level);
   if(levelTween) levelTween.stop(); if(levelTimer) levelTimer.remove(false);
   levelTween = scene.tweens.add({ targets:levelDisplay, scaleX:1.5, scaleY:1.5, duration:300, yoyo:true });
   levelTimer = scene.time.addEvent({ delay:1500, callback:()=>levelDisplay.setText('') });
 }
+
+// ===================== SPAWN & COLLISIONS =====================
 function spawnObstacle(){
   const w = this.scale.width;
-  obstacles.create(Phaser.Math.Between(50, w-50), 50, 'obstacle').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1);
+  obstacles.create(Phaser.Math.Between(50, w-50), 50, 'obstacle')
+    .setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1);
 }
 function spawnBonus(){
   const w = this.scale.width;
-  bonuses.create(Phaser.Math.Between(50, w-50), 50, 'bonus').setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1);
+  bonuses.create(Phaser.Math.Between(50, w-50), 50, 'bonus')
+    .setDisplaySize(40*spriteScale,40*spriteScale).setDepth(1);
 }
 function collectBonus(p,b){ b.destroy(); score+=50; this.bonusSound.play(); }
-function hitObstacle(p,o){ o.destroy(); lives--; this.obstacleSound.play(); updateHearts.call(this); animateHealthBar.call(this); if(lives<=0) endGame.call(this); }
-function animateHealthBar(){ healthHearts.children.each(h => { this.tweens.add({ targets:h, scaleX:h.scaleX*1.15, scaleY:h.scaleY*1.15, yoyo:true, duration:150, ease:'Power2' }); }); }
+function hitObstacle(p,o){
+  o.destroy(); lives--; this.obstacleSound.play();
+  updateHearts.call(this);               // met à jour l’affichage des cœurs
+  animateHealthBar.call(this);           // petite animation de feedback
+  if(lives<=0) endGame.call(this);       // fin de partie
+}
+function animateHealthBar(){
+  healthHearts.children.each(h => {
+    this.tweens.add({ targets:h, scaleX:h.scaleX*1.15, scaleY:h.scaleY*1.15, yoyo:true, duration:150, ease:'Power2' });
+  });
+}
 
-/* Cœurs :
-   - PC : position fixe (startX=345, spacing=19, sc=0.4, y=22)
-   - Mobile : adaptatif (légèrement plus bas pour l’alignement) */
+// ===================== AFFICHAGE DES CŒURS (HUD) =====================
+// - PC : position fixe
+// - Mobile : position calculée, avec léger offset vertical pour aligner à "VIE:"
 function updateHearts(){
   healthHearts.clear(true,true);
   if (isMobile){
@@ -452,14 +556,14 @@ function updateHearts(){
     let spacing = heartW*1.1; if (lives*spacing>available) spacing = available/Math.max(1,lives);
     const startX = healthLabel.x + healthLabel.width + 10;
     const midY = healthLabel.y + (healthLabel.height*0.5);
-    const offsetY = 4; // ⬇️ léger décalage vers le bas sur mobile
-
+    const offsetY = 4; // ⟵ réglage fin vertical des cœurs sur mobile
     for (let i=0;i<lives;i++){
       let h = this.add.image(startX + (i*spacing), midY + offsetY, 'vie')
         .setOrigin(0.5).setScale(sc).setDepth(11);
       healthHearts.add(h);
     }
   } else {
+    // Placement fixe sur PC (modifie y pour monter/descendre)
     const startX=345, spacing=19, sc=0.4, y=22;
     for (let i=0;i<lives;i++){
       let h = this.add.image(startX + (i*spacing), y, 'vie')
@@ -469,7 +573,10 @@ function updateHearts(){
   }
 }
 
-/* ==== (héritage) placeSupportBottom : no-op sans supportButton ==== */
+/* ==== (héritage) placeSupportBottom : no-op sans supportButton ====
+   - Utilisé si un bouton "support" était affiché en bas
+   - Conserve le calcul d’un placement sûr par rapport au bas
+*/
 function placeSupportBottom(scene){
   if (!supportButton) return;
   const canvasH = scene.scale.height;
@@ -480,7 +587,9 @@ function placeSupportBottom(scene){
   supportButton.setY(y);
 }
 
-/* === Construction UI Game Over (SANS "SOUTENIR") === */
+// ===================== ÉCRAN GAME OVER (stats + retry) =====================
+// - Position du bouton Retry : .setPosition(200,456) (voir ci-dessous)
+// - Position verticale du bloc texte : calculée via midY
 function showGameOverUI() {
   const centerX = this.scale.width/2;
 
@@ -489,12 +598,15 @@ function showGameOverUI() {
 
   /* Retry visible et au-dessus */
   restartButton.setVisible(true).setDepth(70).setPosition(200,456); <!-- CHANGÉ: 424 -> 456 -->
+  // ↑ Pour descendre/monter le bouton Retry : changer la valeur Y ici (456)
 
   if (score > bestLocalScore){ bestLocalScore = score; localStorage.setItem('bestScore', String(bestLocalScore)); }
 
-  const statsSize = 28;
-  const step = Math.max(1, statsSize * STATS_LINE_SPACING);
+  // Réglage de taille/espacement du bloc stats
+  const statsSize = 28;                            // taille de police des lignes de stats
+  const step = Math.max(1, statsSize * STATS_LINE_SPACING); // interligne dérivé
 
+  // Lignes du bloc "Score / Temps / Meilleur scores"
   scoreLineText = this.add.bitmapText(0, -step, 'vt323', 'SCORE : ' + score, statsSize).setOrigin(0.5);
   timeLineText  = this.add.bitmapText(0,  0,    'vt323', 'TEMPS : ' + timer + 's', statsSize).setOrigin(0.5);
   bestLocalText = this.add.bitmapText(0,  step, 'vt323', 'MEILLEUR SCORE (TOI) : ' + bestLocalScore, statsSize).setOrigin(0.5);
@@ -502,11 +614,12 @@ function showGameOverUI() {
   // Placeholder pour le global (sera mis à jour après lecture Firestore)
   globalLineText= this.add.bitmapText(0,  step*2,'vt323', 'MEILLEUR SCORE (TOUS) : ...', statsSize).setOrigin(0.5);
 
+  // Zone verticale entre image Game Over (bas) et Retry (haut)
   const bottomOfOver = gameOverImage.y + gameOverImage.displayHeight/1.7;
   const topOfRetry   = restartButton.y - restartButton.displayHeight/2;
 
-  // Décalage vers le haut d'une demi-ligne pour compenser la ligne en plus
-  const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2);
+  // Position verticale du bloc texte (midY)
+  const midY = ((bottomOfOver + topOfRetry) / 2) - (step / 2); // ⟵ ajuste +/- (step/2) si nécessaire
 
   if (statsContainer) statsContainer.destroy();
   statsContainer = this.add.container(centerX, midY, [
@@ -522,7 +635,7 @@ function showGameOverUI() {
   });
 }
 
-/* === Fin de partie : interstitiel PUIS Game Over === */
+// ===================== FIN DE PARTIE =====================
 function endGame(){
   if (gameOver) return; gameOver = true;
   if (backMusic?.isPlaying) backMusic.stop();
@@ -532,7 +645,7 @@ function endGame(){
   if (timerEvent) timerEvent.remove(false); if (levelTween) levelTween.stop(); if (levelTimer) levelTimer.remove(false);
   levelDisplay.setText(''); overlay.setVisible(true);
 
-  // Compter la partie finie
+  // Compter la partie finie (pour l’interstitiel N parties)
   gamesPlayed = (gamesPlayed|0) + 1;
   localStorage.setItem('gamesPlayed', String(gamesPlayed));
 
@@ -545,32 +658,45 @@ function endGame(){
   }
 }
 
+// ===================== RESET / RESTART =====================
 function resetGame(){
+  // Remise à zéro des variables de session
   score=0; lives=3; level=1; timer=0; gameOver=false;
   obstacleSpeed=120; bonusSpeed=200; roadScrollSpeed=2;
+
+  // Remise à zéro de l’UI HUD
   scoreText.setText('SCORE: 0'); timerText.setText('TEMPS: 0'); levelText.setText('NIVEAU: 1');
   finalScoreText.setText('');
   gameOverImage.setVisible(false).setAlpha(0); overlay.setVisible(false); restartButton.setVisible(false);
 
   if (mobileRetryZone) { mobileRetryZone.destroy(); mobileRetryZone = null; }
 
-  if (supportButton){ supportButton.destroy(); supportButton=null; } // (sécurité)
+  // Nettoyages divers (sécurité)
+  if (supportButton){ supportButton.destroy(); supportButton=null; }
   if (statsContainer){ statsContainer.destroy(); statsContainer=null; }
   if (scoreLineText){ scoreLineText.destroy(); scoreLineText=null; }
   if (timeLineText){ timeLineText.destroy(); timeLineText=null; }
   if (bestLocalText){ bestLocalText.destroy(); bestLocalText=null; }
   if (globalLineText){ globalLineText.destroy(); globalLineText=null; }
 
+  // Repositionnement joueur & groupes
   player.clearTint(); player.setPosition(200,400);
   obstacles.clear(true,true); bonuses.clear(true,true);
+
+  // Reprise des timers de jeu
   this.physics.resume();
   timerEvent = this.time.addEvent({ delay:1000, callback:()=>{ timer++; timerText.setText('TEMPS: ' + timer); }, loop:true });
   spawnObstacleEvent = this.time.addEvent({ delay:1200, callback:spawnObstacle, callbackScope:this, loop:true });
   spawnBonusEvent = this.time.addEvent({ delay:2000, callback:spawnBonus, callbackScope:this, loop:true });
+
+  // Réaffichage des cœurs initiaux
   updateHearts.call(this);
+
+  // Musique in-game
   if (gameOverSoundRef?.isPlaying) gameOverSoundRef.stop();
   if (backMusic) backMusic.play();
 
+  // Bouton Retry actif
   restartButton.setInteractive({useHandCursor:true});
 }
 </script>
